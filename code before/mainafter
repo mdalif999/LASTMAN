@@ -1,0 +1,203 @@
+import flet as ft
+import datetime
+import threading
+import time
+from database import init_db, get_inventory_items, get_dashboard_stats, get_recent_sales
+from pages.inventory import inventory_page
+from pages.pos import pos_page
+from pages.sales_report import sales_report_page
+from pages.admin_panel import admin_panel_page # এই লাইনটি যোগ করো
+# কনফিগারেশন
+APP_PASSWORD = "123"
+MASTER_PIN = "9988"
+
+# --- সঠিক ইউনিট দেখানোর ফাংশন ---
+def format_stock_simple(total_val, unit_size, unit_type):
+    if total_val <= 0: return "Out of Stock"
+    if unit_type == "piece": return f"{int(total_val)} Pcs"
+    if unit_type == "sft": return f"{total_val:.2f} SFT"
+    if unit_type == "wool": return f"{int(total_val//12)}' {total_val%12:.0f}\""
+    pcs = int(total_val // unit_size)
+    rem = total_val % unit_size
+    ft_val = int(rem // 12)
+    in_val = rem % 12
+    res = []
+    if pcs > 0: res.append(f"{pcs}P")
+    if ft_val > 0: res.append(f"{ft_val}'")
+    if in_val > 0: res.append(f"{in_val:.0f}\"")
+    return " ".join(res) if res else "0\""
+
+def main(page: ft.Page):
+    init_db()
+    page.title = "Khondakar Traders POS"
+    page.theme_mode = ft.ThemeMode.DARK
+    page.bgcolor = "#0f111a"
+    page.padding = 0
+
+    main_layout = ft.Container(expand=True)
+    content_area = ft.Container(expand=True)
+    clock_text = ft.Text(size=16, color="white60", weight="bold")
+
+    def update_clock():
+        while True:
+            now = datetime.datetime.now()
+            clock_text.value = now.strftime("%d %B %Y | %I:%M:%S %p")
+            try: page.update()
+            except: break
+            time.sleep(1)
+
+    # --- নেভিগেশন লজিক (আপডেটেড) ---
+    def navigate(target):
+        # --- অ্যাডমিন প্যানেল পাসওয়ার্ড প্রোটেকশন ---
+        if target == "admin_panel":
+            pw_input = ft.TextField(label="Enter Master PIN", password=True, can_reveal_password=True, autofocus=True)
+            
+            def verify_and_open(e):
+                if pw_input.value == MASTER_PIN: # তোমার দেওয়া ৯৯৮৮ পিন
+                    page.close(dlg)
+                    content_area.content = admin_panel_page(page)
+                    page.update()
+                else:
+                    pw_input.error_text = "Incorrect PIN!"
+                    page.update()
+
+            dlg = ft.AlertDialog(
+                title=ft.Text("Restricted Access"),
+                content=ft.Column([ft.Text("Authentication required to view profit data."), pw_input], tight=True),
+                actions=[ft.TextButton("Cancel", on_click=lambda _: page.close(dlg)),
+                         ft.ElevatedButton("Unlock", on_click=verify_and_open, bgcolor="orange", color="white")]
+            )
+            page.open(dlg)
+            return
+
+        # --- বাকি নেভিগেশন ---
+        if target == "dashboard":
+            stats = get_dashboard_stats()
+            recent_sales_data = get_recent_sales(5)
+            items = get_inventory_items()
+            
+            low_stock_items = []
+            for i in items:
+                stock_val, u_size = float(i[6] or 0), float(i[7] or 120)
+                u_type = i[10] if len(i) > 10 else "alum"
+                if (u_type == "alum" and stock_val < (50 * u_size)) or (u_type != "alum" and stock_val < 50):
+                    low_stock_items.append(i)
+            
+            content_area.content = ft.Container(
+                content=ft.Column([
+                    ft.Row([ft.Text("Business Overview", size=35, weight="bold"), ft.Container(expand=True), clock_text], alignment="spaceBetween"),
+                    ft.Container(height=20),
+                    ft.ResponsiveRow([
+                        create_card("Total Investment", f"{stats['investment']:,.2f} TK", "orange", ft.Icons.PAYMENTS),
+                        create_card("Total Products", str(stats['items']), "blue", ft.Icons.INVENTORY_2),
+                        create_card("Today's Sales", f"{stats['sales']:,.2f} TK", "green", ft.Icons.TRENDING_UP),
+                        create_card("Total Due", f"{stats.get('due', 0):,.2f} TK", "red", ft.Icons.REPORT_GMAILERRORRED),
+                    ], spacing=20),
+                    ft.Container(height=30),
+                    ft.Row([
+                        ft.Container(content=ft.Column([
+                            ft.Text("Recent Sales", size=22, weight="bold"),
+                            ft.Divider(color="white10"),
+                            ft.DataTable(columns=[ft.DataColumn(ft.Text("Item")), ft.DataColumn(ft.Text("Total Bill")), ft.DataColumn(ft.Text("Time"))],
+                                         rows=[ft.DataRow(cells=[ft.DataCell(ft.Text(s[0][:18]+"..")), ft.DataCell(ft.Text(f"{s[2]:,.0f}")), ft.DataCell(ft.Text(s[3].split()[1]))]) for s in recent_sales_data])
+                        ]), bgcolor="#1e2b5e", padding=25, border_radius=15, expand=2),
+                        ft.Container(content=ft.Column([
+                            ft.Text("Low Stock Alert", size=22, weight="bold", color="red400"),
+                            ft.Divider(color="white10"),
+                            ft.Column([ft.ListTile(leading=ft.Icon(ft.Icons.WARNING_ROUNDED, color="red"), title=ft.Text(item[3], size=14),
+                                                  subtitle=ft.Text(format_stock_simple(float(item[6]), float(item[7]), item[10]), color="red200")) for item in low_stock_items[:5]], scroll=ft.ScrollMode.AUTO)
+                        ]), bgcolor="#1e2b5e", padding=25, border_radius=15, expand=1),
+                    ], spacing=20),
+                    ft.Container(height=30),
+                    ft.Text("Quick Actions", size=25, weight="bold"),
+                    ft.Row([ft.ElevatedButton("New Sale", icon=ft.Icons.ADD_SHOPPING_CART, on_click=lambda _: navigate("sales"), bgcolor="orange", color="white"),
+                            ft.ElevatedButton("View Inventory", icon=ft.Icons.LIST_ALT, on_click=lambda _: navigate("inventory"))], spacing=15)
+                ], scroll=ft.ScrollMode.AUTO), padding=40
+            )
+        elif target == "inventory": 
+            content_area.content = inventory_page(page)
+        elif target == "sales": 
+            content_area.content = pos_page(page)
+        elif target == "sales_report": 
+            content_area.content = sales_report_page(page)
+        elif target == "stock_report": 
+            content_area.content = ft.Center(ft.Text("Stock Report Coming Soon...", size=30))
+        elif target == "history": 
+            content_area.content = ft.Center(ft.Text("Audit History Coming Soon...", size=30))
+        elif target == "settings": 
+            content_area.content = ft.Center(ft.Text("Settings Coming Soon...", size=30))
+        elif target == "logout": 
+            main_layout.content = login_screen
+        page.update()
+    def create_card(title, val, color, icon):
+        return ft.Container(content=ft.Column([ft.Icon(icon, color=color, size=40), ft.Text(title, color="white60"), ft.Text(val, size=22, weight="bold")]),
+                            bgcolor="#1e2b5e", padding=25, border_radius=15, col={"sm": 12, "md": 6, "lg": 3})
+
+    def sidebar_btn(icon, label, target):
+        return ft.Container(content=ft.Row([ft.Icon(icon, color="white"), ft.Text(label, size=18, weight="bold")], spacing=20),
+                            padding=ft.padding.symmetric(vertical=15, horizontal=25), on_click=lambda _: navigate(target), border_radius=10,
+                            on_hover=lambda e: setattr(e.control, "bgcolor", "#2c3e50" if e.data == "true" else None) or e.control.update())
+
+    # তোমার কোডের sidebar ভেরিয়েবলটি এখান থেকে রিপ্লেস করো
+    sidebar = ft.Container(
+        content=ft.Column([
+            ft.Container(
+                content=ft.Column([
+                    ft.Icon(ft.Icons.STORE, size=50, color="orange"), 
+                    ft.Text("Khondakar\nTraders", size=25, weight="bold")
+                ]), 
+                padding=ft.padding.only(top=40, bottom=20)
+            ),
+            ft.Divider(height=1, color="white10"),
+            sidebar_btn(ft.Icons.DASHBOARD, "Dashboard", "dashboard"),
+            sidebar_btn(ft.Icons.INVENTORY, "Inventory", "inventory"),
+            sidebar_btn(ft.Icons.SHOPPING_CART, "Sales (POS)", "sales"),
+            
+            ft.ExpansionTile(
+                title=ft.Text("Reports", size=18, weight="bold", color="white"),
+                leading=ft.Icon(ft.Icons.INSERT_CHART, color="white"),
+                collapsed_icon_color="white",
+                icon_color="orange",
+                controls=[
+                    ft.ListTile(
+                        title=ft.Text("Sales Report"), 
+                        leading=ft.Icon(ft.Icons.POINT_OF_SALE, size=20), 
+                        on_click=lambda _: navigate("sales_report")
+                    ),
+                    ft.ListTile(
+                        title=ft.Text("Stock Report"), 
+                        leading=ft.Icon(ft.Icons.INVENTORY_2, size=20), 
+                        on_click=lambda _: navigate("stock_report")
+                    ),
+                ],
+            ),
+            
+            # --- এই নতুন বাটনটি এখানে যোগ করা হয়েছে ---
+            sidebar_btn(ft.Icons.ADMIN_PANEL_SETTINGS, "Admin Master", "admin_panel"),
+            
+            sidebar_btn(ft.Icons.HISTORY, "History", "history"),
+            sidebar_btn(ft.Icons.SETTINGS, "Settings", "settings"),
+            ft.Container(expand=True),
+            sidebar_btn(ft.Icons.LOGOUT, "Logout", "logout"),
+        ]), 
+        width=280, 
+        bgcolor="#1e2b5e", 
+        padding=20
+    )
+
+    def load_dashboard():
+        main_layout.content = ft.Row([sidebar, content_area], expand=True, spacing=0)
+        navigate("dashboard")
+        threading.Thread(target=update_clock, daemon=True).start()
+        page.update()
+
+    pass_input = ft.TextField(label="Enter Password", width=350, password=True, can_reveal_password=True, on_submit=lambda e: load_dashboard() if pass_input.value == APP_PASSWORD else None, text_align="center")
+    login_screen = ft.Container(content=ft.Column([ft.Icon(ft.Icons.LOCK_PERSON, size=80, color="orange"), ft.Text("Khondakar Traders", size=30, weight="bold"), pass_input, 
+                                                   ft.ElevatedButton("Unlock Dashboard", on_click=lambda e: load_dashboard() if pass_input.value == APP_PASSWORD else None, width=350, bgcolor="orange", color="white")], 
+                                                  alignment="center", horizontal_alignment="center", spacing=20), expand=True, alignment=ft.alignment.center)
+
+    main_layout.content = login_screen
+    page.add(main_layout)
+
+if __name__ == "__main__":
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER)

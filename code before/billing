@@ -1,0 +1,398 @@
+import flet as ft
+import datetime
+import sqlite3
+import re
+import os
+
+# ১. পিডিএফ জেনারেট করার ফাংশন
+def save_pdf_invoice(order_no, customer_name, cart_items, totals, extra_info):
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        
+        downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
+        file_path = os.path.join(downloads_path, f"Invoice_{order_no}.pdf")
+        c = canvas.Canvas(file_path, pagesize=A4)
+        width, height = A4
+        
+        # হেডার
+        c.setFont("Helvetica-Bold", 24)
+        c.drawCentredString(width/2, height - 50, "KHONDAKAR TRADERS")
+        c.setFont("Helvetica", 10)
+        c.drawCentredString(width/2, height - 65, "Stadium Lane, Bogura")
+        c.drawCentredString(width/2, height - 78, f"Mob: {extra_info['phone']} | Email: khondakartraders@gmail.com")
+        c.line(50, height - 90, 545, height - 90)
+        
+        # কাস্টমার ডিটেইলস
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(50, height - 115, f"Customer: {customer_name}")
+        c.drawRightString(545, height - 115, f"Order No: {order_no}")
+        c.setFont("Helvetica", 10)
+        c.drawString(50, height - 130, f"Contact:  {extra_info['cust_phone']}")
+        c.drawRightString(545, height - 130, f"Date: {datetime.date.today().strftime('%d/%m/%Y')}")
+        c.drawString(50, height - 145, f"Address:  {extra_info['cust_address']}")
+        c.drawRightString(545, height - 145, f"Time: {datetime.datetime.now().strftime('%I:%M %p')}")
+        
+        # টেবিল হেডার
+        y = height - 175
+        c.setFont("Helvetica-Bold", 10)
+        c.line(50, y + 10, 545, y + 10)
+        c.drawString(55, y, "SN")
+        c.drawString(85, y, "Die No")
+        c.drawString(145, y, "Profile Name")
+        c.drawString(280, y, "Spec")
+        c.drawString(370, y, "Color")
+        c.drawString(440, y, "Qty")
+        c.drawString(480, y, "Price")
+        c.drawString(515, y, "Total")
+        c.line(50, y - 5, 545, y - 5)
+        
+        y -= 20
+        c.setFont("Helvetica", 9)
+        for i, item in enumerate(cart_items or []):
+            c.drawString(55, y, str(i+1))
+            c.drawString(85, y, str(item.get('die_no', '')))
+            c.drawString(145, y, str(item.get('profile', ''))[:25])
+            c.drawString(280, y, str(item.get('spec', '')))
+            c.drawString(370, y, str(item.get('color', '')))
+            c.drawString(442, y, str(item.get('qty', '0')))
+            c.drawString(480, y, f"{float(item.get('price', 0)):.0f}")
+            c.drawString(515, y, f"{float(item.get('total', 0)):.0f}")
+            y -= 18
+
+        # ক্যালকুলেশন সামারি
+        y -= 10
+        c.line(50, y, 545, y)
+        y -= 20
+        c.setFont("Helvetica", 11)
+        c.drawRightString(460, y, "Gross Total:")
+        c.drawRightString(545, y, f"{float(totals['gross']):,.2f}")
+        
+        y -= 15
+        actual_discount_tk = float(totals.get('discount_tk', 0))
+        c.drawRightString(460, y, f"Discount ({totals.get('discount_per', 0)}%):")
+        c.drawRightString(545, y, f"- {actual_discount_tk:,.2f}")
+        
+        y -= 25
+        c.setFont("Helvetica-Bold", 13)
+        c.drawRightString(460, y, "NET PAYABLE:")
+        c.drawRightString(545, y, f"{float(totals['net']):,.2f} TK")
+        
+        y -= 25
+        c.setFont("Helvetica", 11)
+        # ডাটাবেজ কলামের নাম অনুযায়ী পেইড এবং ডিউ বের করা
+        paid = float(totals.get('paid_amount', 0))
+        due = float(totals.get('due_amount', 0))
+        c.drawRightString(460, y, "Paid Amount:")
+        c.drawRightString(545, y, f"{paid:,.2f}")
+        
+        if due > 0.01:
+            y -= 18
+            c.setFont("Helvetica-Bold", 11)
+            c.drawRightString(460, y, "Due Amount:")
+            c.drawRightString(545, y, f"{due:,.2f}")
+        
+        c.save()
+        return True
+    except Exception as e:
+        print(f"PDF Error: {e}")
+        return False
+
+def get_billing_data():
+    conn = sqlite3.connect("inventory.db")
+    cursor = conn.cursor()
+    shop_info = {'shop_name': 'KHONDAKAR TRADERS', 'shop_address': 'Stadium Lane, Bogura', 'shop_email': 'khondakartraders@gmail.com', 'shop_phone1': '01787-203830', 'shop_phone2': '01641-513276'}
+    order_no = 1001
+    try:
+        cursor.execute("SELECT MAX(order_id) FROM sales")
+        res = cursor.fetchone()[0]
+        if res: order_no = int(res) + 1
+    except: order_no = 1001
+    finally: conn.close()
+    return shop_info, order_no
+
+def billing_page(page, cart_items=None, totals=None):
+    shop_settings, order_no = get_billing_data()
+    
+    # ইনপুট ফিল্ডস
+    # কাস্টমার ইনফরমেশন ইনপুট ফিল্ডস গাড় করা হলো
+    c_name = ft.TextField(
+        label="Customer Name", 
+        width=220, 
+        border_color="black", 
+        text_size=14,
+        label_style=ft.TextStyle(color="black", weight="bold"), # লেবেল গাড় কালো
+        text_style=ft.TextStyle(color="black"), # টাইপ করা টেক্সট কালো
+    )
+    
+    c_phone = ft.TextField(
+        label="Contact No", 
+        width=220, 
+        border_color="black", 
+        text_size=14,
+        label_style=ft.TextStyle(color="black", weight="bold"), # লেবেল গাড় কালো
+        text_style=ft.TextStyle(color="black"), # টাইপ করা টেক্সট কালো
+    )
+    
+    c_address = ft.TextField(
+        label="Address", 
+        width=220, 
+        border_color="black", 
+        text_size=14,
+        label_style=ft.TextStyle(color="black", weight="bold"), # লেবেল গাড় কালো
+        text_style=ft.TextStyle(color="black"), # টাইপ করা টেক্সট কালো
+    )
+    def clear_on_focus(e):
+        e.control.value = "" # বক্স খালি করে দেবে
+        e.control.update()
+    def restore_if_empty(e):
+        # যদি কিছু না লিখে মাউস সরিয়ে নেন, তবে '0' সেট হবে
+        if e.control.value.strip() == "":
+            e.control.value = "0"
+            e.control.update()
+        # ডিসকাউন্ট বদলানোর পর যাতে ক্যালকুলেশন আপডেট হয়, তাই sync_calculations কল করা ভালো
+        sync_calculations(e)
+
+
+    # --- পারসেন্টেজ ডিসকাউন্ট ফিল্ড ---
+    c_discount_per = ft.TextField(
+        label="Disc %", 
+        value="0", 
+        width=100, 
+        text_align="right", 
+        suffix_text="%", 
+        suffix_style=ft.TextStyle(color="black", weight="bold"),
+        border_radius=5,
+        border_color="black",
+        label_style=ft.TextStyle(color="black", weight="bold"),
+        text_style=ft.TextStyle(color="black", weight="bold"),
+        on_focus=clear_on_focus,
+        on_blur=restore_if_empty
+        
+    )
+    # পেইড ফিল্ড
+    net_val = float(totals['net'] if totals else 0)
+    c_paid = ft.TextField(
+        value=str(net_val), 
+        width=150, 
+        text_align="right", 
+        text_size=16, 
+        border_radius=5,
+        border_color="black", # বর্ডার কালো হবে
+        color="black", # টাইপ করা টেক্সট কালো হবে
+        text_style=ft.TextStyle(color="black", weight="bold"), # টেক্সট আরও স্পষ্ট হবে
+        on_focus=clear_on_focus,
+        on_blur=restore_if_empty
+    )
+
+    # ডিসপ্লে টেক্সট
+    display_name = ft.Text("....................", size=16, weight="bold", color="black")
+    display_phone = ft.Text("....................", size=15, color="black")
+    display_address = ft.Text("....................", size=15, color="black")
+    
+    display_net_text = ft.Text(f"{net_val:,.2f} TK", size=24, weight="bold", color="black")
+    display_paid_text = ft.Text(f"{net_val:,.2f} TK", size=18, color="green", weight="bold")
+    display_due_text = ft.Text("0.00 TK", size=18, color="red", weight="bold")
+    # বক্সে ক্লিক করলে লেখা মুছে যাওয়ার ফাংশন 
+    
+
+    def sync_calculations(e):
+        try:
+            gross = float(totals['gross'])
+            disc_percent = float(c_discount_per.value) if c_discount_per.value else 0
+            disc_amount_tk = (gross * disc_percent) / 100
+            new_net = gross - disc_amount_tk
+            
+            if e.control == c_discount_per:
+                c_paid.value = f"{new_net:.2f}"
+            
+            paid_amt = float(c_paid.value) if c_paid.value else 0
+            due_amt = new_net - paid_amt
+            
+            # ডিসপ্লে আপডেট
+            display_net_text.value = f"{new_net:,.2f} TK"
+            display_paid_text.value = f"{paid_amt:,.2f} TK"
+            display_due_text.value = f"{max(0, due_amt):,.2f} TK"
+            
+            # totals ডিকশনারি আপডেট (ডাটাবেজ কলাম নেম অনুযায়ী কী সেট করা হলো)
+            totals['discount_per'] = disc_percent
+            totals['discount_tk'] = disc_amount_tk
+            totals['net'] = new_net
+            totals['paid_amount'] = paid_amt
+            totals['due_amount'] = max(0, due_amt)
+        except: pass
+        
+        display_name.value = c_name.value if c_name.value else "...................."
+        display_phone.value = c_phone.value if c_phone.value else "...................."
+        display_address.value = c_address.value if c_address.value else "...................."
+        page.update()
+
+    c_name.on_change = sync_calculations
+    c_phone.on_change = sync_calculations
+    c_address.on_change = sync_calculations
+    c_discount_per.on_change = sync_calculations
+    c_paid.on_change = sync_calculations
+    
+    # ইনিশিয়াল ভ্যালু সেট
+    totals['discount_per'] = 0
+    totals['discount_tk'] = 0
+    totals['paid_amount'] = net_val
+    totals['due_amount'] = 0
+
+    def confirm_sell_to_db(e):
+        try:
+            conn = sqlite3.connect("inventory.db")
+            cursor = conn.cursor()
+            now = datetime.datetime.now()
+            sale_date = now.strftime('%Y-%m-%d')
+            sale_time = now.strftime('%I:%M %p')
+            
+            total_items = len(cart_items or [])
+            disc_tk = float(totals.get('discount_tk', 0))
+            disc_per_item = disc_tk / total_items if total_items > 0 else 0
+
+            # পেমেন্ট এবং বাকি টাকা
+            final_paid = float(totals.get('paid_amount', 0))
+            final_due = float(totals.get('due_amount', 0))
+
+            for item in (cart_items or []):
+                qty_str = str(item.get('qty', '0')).lower()
+                match = re.search(r"[-+]?\d*\.\d+|\d+", qty_str)
+                qty_val = float(match.group()) if match else 0.0
+                
+                die_no = item.get('die_no', '')
+                
+                cursor.execute("SELECT total_in, buy_price, unit_in FROM inventory WHERE die_no = ?", (die_no,))
+                res = cursor.fetchone()
+                
+                if res:
+                    current_stock_inches = float(res[0]) 
+                    buy_price_per_piece = float(res[1])  
+                    piece_length = float(res[2] or 1)    
+
+                    if "pcs" in qty_str:
+                        actual_qty_to_minus = qty_val * piece_length
+                        item_investment = qty_val * buy_price_per_piece
+                    else:
+                        actual_qty_to_minus = qty_val
+                        item_investment = (qty_val / piece_length) * buy_price_per_piece
+
+                    item_total_price = float(item.get('total', 0))
+                    item_profit = (item_total_price - item_investment) - disc_per_item
+                    new_stock = round(current_stock_inches - actual_qty_to_minus, 2)
+
+                    cursor.execute("UPDATE inventory SET total_in = ? WHERE die_no = ?", (new_stock, die_no))
+                    
+                    cursor.execute("""INSERT INTO sales (order_id, customer_name, customer_phone, customer_address, die_no, 
+                                   profile_name, spec, color, quantity, price, total, discount, profit, 
+                                   paid_amount, due_amount, sale_date, sale_time) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", 
+                                   (order_no, c_name.value or "Cash", c_phone.value, c_address.value, die_no, 
+                                    item.get('profile', ''), item.get('spec', ''), item.get('color', ''), qty_val, 
+                                    item.get('price', 0), item_total_price, round(disc_per_item, 2), round(item_profit, 2), 
+                                    final_paid, final_due, sale_date, sale_time))
+                else:
+                    print(f"Warning: Die No {die_no} not found!")
+
+            conn.commit()
+            conn.close()
+            return order_no
+        except Exception as ex:
+            print(f"DB Error: {ex}")
+            return None
+
+    def handle_final_action(action_type):
+        final_id = confirm_sell_to_db(None)
+        if final_id:
+            extra = {'phone': shop_settings['shop_phone1'], 'cust_phone': c_phone.value, 'cust_address': c_address.value}
+            save_pdf_invoice(final_id, c_name.value or "Walking Customer", cart_items, totals, extra)
+            if action_type == "print": page.run_javascript("window.print()")
+            page.close(confirm_dlg)
+            page.snack_bar = ft.SnackBar(ft.Text(f"Order #{final_id} Processed!"), bgcolor="green")
+            page.snack_bar.open = True
+            page.update()
+
+    confirm_dlg = ft.AlertDialog(modal=True, title=ft.Text("Confirm Order"), actions=[
+        ft.ElevatedButton("Save & Download", icon=ft.Icons.SAVE_ALT, on_click=lambda _: handle_final_action("save")),
+        ft.ElevatedButton("Print Memo", icon=ft.Icons.PRINT, on_click=lambda _: handle_final_action("print")),
+        ft.TextButton("Cancel", on_click=lambda _: page.close(confirm_dlg))
+    ])
+
+    invoice_ui = ft.Column([
+        ft.Container(content=ft.Column([
+            ft.Text(shop_settings['shop_name'].upper(), size=55, weight="bold", color="black"),
+            ft.Text(shop_settings['shop_address'], size=18, color="black", weight="w500"),
+            ft.Text(f"Mob: {shop_settings['shop_phone1']}, {shop_settings['shop_phone2']} | Email: {shop_settings['shop_email']}", size=15, color="black"),
+        ], horizontal_alignment="center", spacing=2), margin=ft.margin.only(bottom=20)),
+        ft.Divider(height=2, color="black"),
+        ft.Container(content=ft.Row([
+            ft.Column([
+                ft.Row([ft.Text("Customer: ", weight="bold", color="black", size=16), display_name]),
+                ft.Row([ft.Text("Contact:  ", weight="bold", color="black", size=16), display_phone]),
+                ft.Row([ft.Text("Address:  ", weight="bold", color="black", size=16), display_address]),
+            ], spacing=5),
+            ft.Column([
+                ft.Text(f"Order No: {order_no}", size=18, weight="bold", color="black"),
+                ft.Text(f"Date: {datetime.date.today().strftime('%d/%m/%Y')}", size=16, color="black"),
+                ft.Text(f"Time: {datetime.datetime.now().strftime('%I:%M %p')}", size=16, color="black"),
+            ], horizontal_alignment="end", spacing=5)
+        ], alignment="spaceBetween"), padding=ft.padding.only(top=10, bottom=20)),
+        # সরাসরি এই DataTable অংশটুকু এডিট করুন
+        ft.DataTable(
+            border=ft.border.all(1.5, "black"), 
+            heading_row_color="#f0f0f0",
+            columns=[
+                # হেডারের প্রতিটা টেক্সটে color আর weight যোগ করুন
+                ft.DataColumn(ft.Text("SN", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Die No", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Profile Name", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Spec", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Color", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Qty", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Price", color="black", weight="bold")),
+                ft.DataColumn(ft.Text("Total", color="black", weight="bold")),
+            ],
+            rows=[ft.DataRow(cells=[
+                # ভেতরের প্রতিটা সেলের টেক্সটেও color="black" দিন
+                ft.DataCell(ft.Text(str(i+1), color="black")),
+                ft.DataCell(ft.Text(str(item.get('die_no', '')), color="black")),
+                ft.DataCell(ft.Text(str(item.get('profile', '')), color="black")),
+                ft.DataCell(ft.Text(str(item.get('spec', '')), color="black")),
+                ft.DataCell(ft.Text(str(item.get('color', '')), color="black")),
+                ft.DataCell(ft.Text(str(item.get('qty', 0)), color="black")),
+                ft.DataCell(ft.Text(f"{float(item.get('price', 0)):,.2f}", color="black")),
+                ft.DataCell(ft.Text(f"{float(item.get('total', 0)):,.2f}", weight="bold", color="black"))
+            ]) for i, item in enumerate(cart_items or [])],
+            width=1100
+        ),
+        ft.Container(content=ft.Column([
+            # Gross Total - কালো এবং গাঢ় করা হলো
+            ft.Row([
+                ft.Text("Gross Total:", size=18, color="black"), 
+                ft.Text(f"{float(totals['gross']):,.2f} TK", size=18, weight="bold", color="black")
+            ], alignment="end", spacing=40),
+
+            # Discount - কালো এবং গাঢ় করা হলো
+            ft.Row([
+                ft.Text("Discount (%):", size=18, color="black"), 
+                c_discount_per # c_discount_per এর ভেতর নিজস্ব স্টাইল আছে
+            ], alignment="end", spacing=40),
+
+            # NET PAYABLE - বড় এবং সলিড কালো করা হলো
+            ft.Row([
+                ft.Text("NET PAYABLE:", size=24, weight="bold", color="black"), 
+                display_net_text # এই ভেরিয়েবল তৈরির সময় color="black" নিশ্চিত করুন
+            ], alignment="end", spacing=40),
+
+            # Paid এবং Due আপনার আগের কালার কোডেই থাকলো
+            ft.Row([ft.Text("Paid Amount:", size=18, color="green"), c_paid], alignment="end", spacing=40),
+            ft.Row([ft.Text("Due Amount:", size=18, color="red", weight="bold"), display_due_text], alignment="end", spacing=40),
+        ], horizontal_alignment="end"), padding=ft.padding.only(top=20)),
+
+        ft.Row([ft.ElevatedButton("CONFIRM SELL & UPDATE STOCK", icon=ft.Icons.CHECK_CIRCLE, bgcolor="blue_800", color="white", height=50, width=350, on_click=lambda _: page.open(confirm_dlg))], alignment="end")
+    ])
+
+    return ft.Container(content=ft.Column([
+        ft.Container(content=ft.Row([c_name, c_phone, c_address, ft.IconButton(ft.Icons.ARROW_BACK, on_click=lambda _: page.go("sales"), icon_color="black")], alignment="center", spacing=10), padding=15, bgcolor="#f5f5f5", border_radius=10),
+        ft.Container(content=invoice_ui, bgcolor="white", padding=50, border=ft.border.all(1, "black12"), margin=ft.margin.all(10), alignment=ft.alignment.top_center)
+    ], scroll=ft.ScrollMode.AUTO), expand=True, bgcolor="white")
