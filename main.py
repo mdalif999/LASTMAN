@@ -419,10 +419,16 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
+    import os
+    # সার্ভার থেকে পোর্ট নম্বর নেওয়া, না থাকলে ডিফল্ট ৮০৮০ বা ৮৫০২
+    port = int(os.getenv("PORT", 8080)) 
+    
     ft.app(
         target=main,
         assets_dir="assets",
-        view=ft.AppView.WEB_BROWSER,
+        # হোস্টিংয়ের সময় view=None রাখা ভালো, এতে সার্ভার মোড কাজ করে
+        view=None, 
+        port=port
     )
 
 
@@ -430,10 +436,14 @@ if __name__ == "__main__":
 # PDF INVOICE GENERATOR
 # ================================================================
 def generate_invoice_pdf(order_id, customer_name, cart_items, total_amount):
-    downloads_path = os.path.join(os.path.expanduser("~"), "Downloads")
-    file_path      = os.path.join(downloads_path, f"Invoice_{order_id}.pdf")
+    # সার্ভারের টেম্পোরারি ডিরেক্টরি ব্যবহার করা
+    import tempfile
+    
+    # এটি সার্ভারের একটি অস্থায়ী জায়গায় ফাইল সেভ করবে
+    temp_dir = tempfile.gettempdir()
+    file_path = os.path.join(temp_dir, f"Invoice_{order_id}.pdf")
 
-    c      = canvas.Canvas(file_path, pagesize=A4)
+    c = canvas.Canvas(file_path, pagesize=A4)
     width, height = A4
 
     c.setFont("Helvetica-Bold", 20)

@@ -72,6 +72,7 @@ def main(page: ft.Page):
     # NAVIGATE
     # ================================================================
     def navigate(target):
+        page._navigate = navigate   # ✅ billing_page back button এর জন্য
         content_area.content = None
 
         if target == "dashboard":

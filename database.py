@@ -446,35 +446,18 @@ def get_filtered_sales_report(filter_type="today"):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # GROUP BY এবং SUM লজিক সহ কুয়েরি
-    base_query = """
-        SELECT 
-            order_id, 
-            sale_date, 
-            sale_time, 
-            customer_name, 
-            customer_phone,
-            SUM(total) as net_total, 
-            SUM(discount) as total_discount,
-            MAX(paid_amount) as paid_amount, 
-            MAX(due_amount) as due_amount 
-        FROM sales
-    """
-
     if filter_type == "today":
-        where_clause = " WHERE date(sale_date) = date('now','localtime')"
+        query = "SELECT * FROM sales WHERE date(sale_date) = date('now','localtime')"
     elif filter_type == "month":
-        where_clause = " WHERE strftime('%m-%Y', sale_date) = strftime('%m-%Y', 'now','localtime')"
+        query = "SELECT * FROM sales WHERE strftime('%m-%Y', sale_date) = strftime('%m-%Y', 'now','localtime')"
     elif filter_type == "year":
-        where_clause = " WHERE strftime('%Y', sale_date) = strftime('%Y', 'now','localtime')"
+        query = "SELECT * FROM sales WHERE strftime('%Y', sale_date) = strftime('%Y', 'now','localtime')"
     else:
-        where_clause = ""
+        query = "SELECT * FROM sales"
 
-    # কুয়েরি সাজানো: WHERE + GROUP BY + ORDER BY
-    full_query = f"{base_query} {where_clause} GROUP BY order_id ORDER BY id DESC"
-
+    query += " ORDER BY id DESC"
     try:
-        cursor.execute(full_query)
+        cursor.execute(query)
         return cursor.fetchall()
     except Exception as e:
         print(f"get_filtered_sales_report error: {e}")
@@ -659,30 +642,28 @@ def format_inches_to_feet(total_inches):
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully!")
+
+
 def get_invoice_items(order_id):
-    """নির্দিষ্ট অর্ডার আইডির সকল প্রোডাক্ট আইটেম ডিকশনারি ফরম্যাটে নিয়ে আসে"""
+    """একটি order_id এর সব items + inventory থেকে unit_in, unit_type আনে।"""
     conn = sqlite3.connect("inventory.db")
-    # এটি ডাটাকে ডিকশনারি অবজেক্ট হিসেবে পড়ার সুবিধা দেয়
-    conn.row_factory = sqlite3.Row 
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
-    
-    # এখানে die_no কলামটি অবশ্যই থাকতে হবে, কারণ আপনার UI এটি খুঁজছে
-    cursor.execute("""
-        SELECT 
-            die_no, 
-            profile_name, 
-            color, 
-            spec, 
-            quantity, 
-            price, 
-            total 
-        FROM sales 
-        WHERE order_id = ?
-    """, (order_id,))
-    
-    rows = cursor.fetchall()
-    
-    # ডাটাকে ডিকশনারি লিস্টে রূপান্তর
-    items = [dict(row) for row in rows]
-    conn.close()
-    return items
+    try:
+        cursor.execute("""
+            SELECT
+                s.id, s.order_id, s.profile_name, s.die_no,
+                s.color, s.spec, s.quantity,
+                s.price, s.total, s.discount,
+                i.unit_in, i.unit_type, i.brand
+            FROM sales s
+            LEFT JOIN inventory i ON s.die_no = i.die_no
+            WHERE s.order_id = ?
+            ORDER BY s.id ASC
+        """, (str(order_id),))
+        return cursor.fetchall()
+    except Exception as e:
+        print(f"get_invoice_items error: {e}")
+        return []
+    finally:
+        conn.close()
