@@ -1,25 +1,31 @@
+import sys
+import os
+
+# --- উইন্ডোজ ARM64 ভার্চুয়াল এনভায়রনমেন্টের জন্য পাথ হ্যাক ---
+# (ম্যাকবুকে থাকলে এই কন্ডিশনটা নিজে থেকেই স্কিপ হয়ে যাবে, কোনো এরর দেবে না)
+venv_path = os.path.join(os.path.dirname(__file__), '.venv', 'Lib', 'site-packages')
+if os.path.exists(venv_path):
+    sys.path.append(venv_path)
+
 import flet as ft
 import datetime
 import threading
 import time
-import re
-import os
-
 import sqlite3
 from supabase import create_client, Client
+
 # --- নতুন পেজ এবং ডাটাবেজ ইমপোর্ট ---
-from pages.ProfitReportPage import ProfitReportPage  # এটি নিশ্চিত করুন ফাইলটি main.py এর পাশে আছে
-import os
-import sys  # এটি দিলে হলুদ দাগ চলে যাবে
+from pages.ProfitReportPage import ProfitReportPage 
 
 def get_path(filename):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, filename)
     return os.path.join(os.path.abspath("."), filename)
+
 from database import (
     init_db, get_inventory_items, get_dashboard_stats,
-    get_recent_sales, init_settings_db, get_app_password, 
-    update_app_password, get_profit_sum
+    get_recent_sales, get_app_password, 
+    update_app_password,
 )
 
 # ==================== SUPABASE CONFIGURATION ====================
