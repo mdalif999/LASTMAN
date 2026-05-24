@@ -1,0 +1,21 @@
+# ভার্চুয়াল এনভায়রনমেন্ট (সবচেয়ে গুরুত্বপূর্ণ)
+.venv/
+venv/
+ENV/
+
+# Mac এর নিজস্ব হিডেন ফাইল
+.DS_Store
+.AppleDouble
+.LSOverride
+build/
+dist/
+*.spec
+# পাইথনের ক্যাশ ফাইল
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Flet এর বিল্ড বা ডিস্ট্রিবিউশন আউটপুট (যদি তৈরি করে থাকেন)
+build/
+dist/
