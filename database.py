@@ -6,14 +6,15 @@ import sys
 import sqlite3
 
 if getattr(sys, 'frozen', False):
-    BASE_DIR = sys._MEIPASS
+    BASE_DIR = os.path.abspath(os.path.join(
+        os.path.dirname(sys.executable),
+        "..", "..", ".."  # MacOS → Contents → main.app → dist
+    ))
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DB = os.path.join(BASE_DIR, "inventory.db")
-INVENTORY_DB = os.path.join(BASE_DIR, "inventory.db")
-
-DB = "inventory.db"
+INVENTORY_DB = DB
 
 def _conn():
     """সব connection এ timeout=15 দেওয়া — lock problem fix।"""
@@ -234,7 +235,7 @@ def get_colors():
     return colors
 
 def add_new_color(name):
-    conn = sqlite3.connect("inventory.db", timeout=15)
+    conn = sqlite3.connect(DB, timeout=15)
     cursor = conn.cursor()
     try:
         cursor.execute("INSERT INTO colors (name) VALUES (?)", (name,))
