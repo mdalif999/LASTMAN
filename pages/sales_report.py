@@ -302,11 +302,35 @@ def sales_report_page(page):
         ]
         render_rows(filtered)
 
-    # ── load from DB ───────────────────────────────────────
+    # ── load from DB (সংশোধিত) ───────────────────────────────
     def load_report_data(filter_type="today"):
         nonlocal all_rows
         try:
-            all_rows = list(get_filtered_sales_report(filter_type))
+            raw_data = list(get_filtered_sales_report(filter_type))
+            
+            # ডেটা গ্রুপ করার ম্যাজিক: একই order_id এর আইটেমগুলো যোগ করে ফেলা
+            grouped = {}
+            for row in raw_data:
+                r = dict(row)
+                oid = r.get("order_id")
+                if oid not in grouped:
+                    grouped[oid] = {
+                        "order_id": oid,
+                        "sale_date": r.get("sale_date"),
+                        "sale_time": r.get("sale_time"),
+                        "customer_name": r.get("customer_name"),
+                        "customer_phone": r.get("customer_phone"),
+                        "total": 0.0,
+                        "discount": 0.0,
+                        "paid_amount": r.get("paid_amount"),
+                        "due_amount": r.get("due_amount")
+                    }
+                grouped[oid]["total"]    += float(r.get("total") or 0)
+                grouped[oid]["discount"] += float(r.get("discount") or 0)
+            
+            # গ্রুপ করা ডেটাগুলো লিস্টে নিয়ে আসা
+            all_rows = list(grouped.values())
+            
             search_field.value = ""
             render_rows(all_rows)
         except Exception as e:
@@ -380,4 +404,4 @@ def sales_report_page(page):
                 padding=5,
             ),
         ]),
-    )
+    ) 

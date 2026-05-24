@@ -2,8 +2,187 @@ import flet as ft
 import datetime
 import threading
 import time
+import re
 import os
 
+import sqlite3
+from supabase import create_client, Client
+# --- নতুন পেজ এবং ডাটাবেজ ইমপোর্ট ---
+from pages.ProfitReportPage import ProfitReportPage  # এটি নিশ্চিত করুন ফাইলটি main.py এর পাশে আছে
+import os
+import sys  # এটি দিলে হলুদ দাগ চলে যাবে
+
+def get_path(filename):
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, filename)
+    return os.path.join(os.path.abspath("."), filename)
+from database import (
+    init_db, get_inventory_items, get_dashboard_stats,
+    get_recent_sales, init_settings_db, get_app_password, 
+    update_app_password, get_profit_sum
+)
+
+# ==================== SUPABASE CONFIGURATION ====================
+SUPABASE_URL = "https://poynesakhmzcguvrihul.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBveW5lc2FraG16Y2d1dnJpaHVsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTI4NTAwOCwiZXhwIjoyMDk0ODYxMDA4fQ.6i6uMdNOPeRBs4JXT8-20dYI5wdNVHj8zn0X4ymOzAY"
+# ================================================================
+
+try:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    print("Supabase connection established successfully!")
+except Exception as e:
+    print(f"Failed to connect to Supabase: {e}")
+
+def get_local_db():
+    # check_same_thread=False এবং timeout=30.0 দিলে UI ও ব্যাকগ্রাউন্ড থ্রেড একসাথে ডেটাবেজ নিয়ে জ্যাম ছাড়া কাজ করবে
+    return sqlite3.connect("inventory.db", check_same_thread=False, timeout=30.0)
+
+def sync_inventory():
+    global supabase
+    conn = get_local_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, brand, die_no, name, color, thick, total_in, unit_in, buy_price, sell_price, unit_type, current_stock 
+            FROM inventory WHERE is_synced = 0
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            return
+        
+        print(f"Syncing {len(rows)} inventory items to cloud...")
+        for row in rows:
+            data = {
+                "id": row[0], "brand": row[1], "die_no": row[2], "name": row[3],
+                "color": row[4], "thick": row[5], "total_in": row[6], "unit_in": row[7],
+                "buy_price": row[8], "sell_price": row[9], "unit_type": row[10], "current_stock": row[11]
+            }
+            try:
+                try:
+                    # প্রথমবার ট্রাই করা
+                    supabase.table("inventory").upsert(data).execute()
+                except Exception as conn_err:
+                    # যদি HTTP/2 বা ConnectionTerminated এরর দেয়, সাথে সাথে ক্লায়েন্ট রিনিউ করে আবার ডেটা পাঠানো
+                    print("Connection terminated during inventory sync. Re-establishing Supabase client...")
+                    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                    supabase.table("inventory").upsert(data).execute()
+                
+                # ক্লাউডে ডেটা সাকসেসফুলি যাওয়ার পরই কেবল লোকাল ফ্ল্যাগ আপডেট এবং কমিট হবে
+                cursor.execute("UPDATE inventory SET is_synced = 1 WHERE id = ?", (row[0],))
+                conn.commit()
+            except Exception as e:
+                print(f"Error syncing inventory ID {row[0]}: {e}")
+    except Exception as e:
+        print(f"Database error in sync_inventory: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def sync_sales():
+    global supabase
+    conn = get_local_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT id, order_id, sale_date, sale_time, customer_name, customer_phone, customer_address,
+                   profile_name, color, spec, die_no, quantity, price, total, discount, paid_amount, due_amount, profit 
+            FROM sales WHERE is_synced = 0
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            return
+        
+        print(f"Syncing {len(rows)} sales records to cloud...")
+        for row in rows:
+            data = {
+                "id": row[0], "order_id": row[1], "sale_date": row[2], "sale_time": row[3],
+                "customer_name": row[4], "customer_phone": row[5], "customer_address": row[6],
+                "profile_name": row[7], "color": row[8], "spec": row[9], "die_no": row[10],
+                "quantity": row[11], "price": row[12], "total": row[13], "discount": row[14],
+                "paid_amount": row[15], "due_amount": row[16], "profit": row[17]
+            }
+            try:
+                try:
+                    supabase.table("sales").upsert(data).execute()
+                except Exception as conn_err:
+                    print("Connection terminated during sales sync. Re-establishing Supabase client...")
+                    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                    supabase.table("sales").upsert(data).execute()
+                
+                cursor.execute("UPDATE sales SET is_synced = 1 WHERE id = ?", (row[0],))
+                conn.commit()
+            except Exception as e:
+                print(f"Error syncing sale ID {row[0]}: {e}")
+    except Exception as e:
+        print(f"Database error in sync_sales: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+def sync_audit_logs():
+    global supabase
+    # 🌟 প্যাক করার পর ডাটাবেজ খুঁজে পাওয়ার জন্য get_path ব্যবহার করুন
+    db_path = get_path("inventory.db")
+    conn = sqlite3.connect(db_path, timeout=20) # এখানে পরিবর্তন হয়েছে
+    cursor = conn.cursor()
+    try:
+        # ... আপনার বাকি সব কোড আগের মতোই থাকবে ...
+        cursor.execute("""
+            SELECT id, timestamp, action_type, product_name, brand, die_code, 
+                   color, unit_length, old_stock, new_stock, details, user 
+            FROM audit_logs 
+            WHERE is_synced = 0
+        """)
+        rows = cursor.fetchall()
+        if not rows:
+            return
+            
+        print(f"Syncing {len(rows)} audit logs to Supabase...")
+        for row in rows:
+            # 🌟 সুপাবেস কলামের নামের সাথে হুবহু মিল (user_name)
+            data = {
+                "id":           row[0],   
+                "timestamp":    row[1],   
+                "action_type":  row[2],  
+                "product_name": row[3],   
+                "brand":        row[4],   
+                "die_code":     row[5],   
+                "color":        row[6],   
+                "unit_length":  row[7],   
+                "old_stock":    row[8],   
+                "new_stock":    row[9],   
+                "details":      row[10],  
+                "user_name":    row[11]   # 🌟 এখানে user_name ব্যবহার করা হয়েছে
+            }
+            try:
+                try:
+                    supabase.table("audit_logs").upsert(data).execute()
+                except Exception:
+                    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+                    supabase.table("audit_logs").upsert(data).execute()
+                
+                cursor.execute("UPDATE audit_logs SET is_synced = 1 WHERE id = ?", (row[0],))
+                conn.commit()
+            except Exception as e:
+                print(f"Error syncing log ID {row[0]}: {e}")
+    except Exception as e:
+        print(f"Database error in sync_audit_logs: {e}")
+    finally:
+        cursor.close()
+        conn.close()
+
+# এই ফাংশনটি থ্রেডের মাধ্যমে ব্যাকগ্রাউন্ডে অনবরত চলবে
+def start_sync_worker(interval_seconds=5):
+    print(f"Sync worker started. Monitoring local database every {interval_seconds} seconds...")
+    while True:
+        try:
+            sync_inventory()
+            sync_sales()
+            sync_audit_logs()
+        except Exception as e:
+            print(f"Sync worker encountered an error: {e}")
+        time.sleep(interval_seconds)
+#######################################
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
@@ -22,7 +201,7 @@ from pages.due_management import DueManagementPage
 init_db()
 APP_PASSWORD = get_app_password()
 
-MASTER_PIN = "9988"
+MASTER_PIN = "tarek"
 
 
 # --- স্টক ফরম্যাট ---
@@ -44,11 +223,44 @@ def format_stock_simple(total_val, unit_size, unit_type):
     if ft_v > 0: res.append(f"{ft_v}'")
     if in_v > 0: res.append(f'{in_v:.0f}"')
     return " ".join(res) if res else '0"'
-
+######################################################
 
 def main(page: ft.Page):
+    # --- ফাংশন দুটি main এর ভেতরে রাখুন ---
+    def create_card(title, value, color, icon, on_click=None):
+        return ft.Container(
+            content=ft.Column([
+                ft.Icon(icon, color=color, size=40),
+                ft.Text(title, color="white60"),
+                ft.Text(value, size=22, weight="bold"),
+            ]),
+            bgcolor="#1e2b5e", padding=25, border_radius=15,
+            col={"sm": 12, "md": 6, "lg": 3},
+            on_click=on_click,
+            ink=True,
+        )
+
+    def show_pin_dialog(page):
+        pin_input = ft.TextField(label="Enter Master PIN", password=True, can_reveal_password=True, autofocus=True)
+        
+        def verify_and_go(e):
+            if pin_input.value == MASTER_PIN:
+                page.close(dlg)
+                # clear করলে সাইডবার চলে যায়, তাই শুধু কন্টেন্ট আপডেট করুন
+                content_area.content = ProfitReportPage(page)
+                page.update()
+            else:
+                pin_input.error_text = "Incorrect PIN!"
+                page.update()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text("Master Access Required"),
+            content=pin_input,
+            actions=[ft.ElevatedButton("Verify", on_click=verify_and_go)]
+        )
+        page.open(dlg)
     init_db()
-    page.title   = "Khondakar Traders POS"
+    page.title   = "MD TAREK POS"
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor = "#0f111a"
     page.padding = 0
@@ -116,27 +328,35 @@ def main(page: ft.Page):
             pass_input.error_text = None
             main_layout.content   = login_screen
 
-        page.update()
+        # --- ফ্লেট অ্যাপের লাইভ রিফ্রেশ ও সেফটি চেক লজিক ---
+        try:
+            # যদি অ্যাপ অলরেডি ড্যাশবোর্ডে ঢুকে থাকে, তাহলে কন্টেন্ট এরিয়া লাইভ রিফ্রেশ হবে (স্টক/ইনভেস্টমেন্ট আপডেট দেখাবে)
+            content_area.update()
+        except Exception:
+            # প্রথমবার লগইনের সময় যেহেতু কন্টেন্ট এরিয়া স্ক্রিনে থাকে না, তাই এই এরর এড়াতে স্কিপ করবে
+            pass
 
-    # ================================================================
-    # DASHBOARD BUILD
+        page.update()
+   # ================================================================
+    # DASHBOARD BUILD (১০০% ক্লিন ও ডাটাবেজ ডিপেন্ডেন্ট)
     # ================================================================
     def _build_dashboard():
         try:
-            stats            = get_dashboard_stats()
+            # সরাসরি ডাটাবেজ থেকে নিখুঁত হিসাবগুলো চলে আসবে
+            stats             = get_dashboard_stats()
             recent_sales_data = get_recent_sales(5)   # (profile_name, quantity, total, sale_date, sale_time)
-            items            = get_inventory_items()
+            items             = get_inventory_items()
         except Exception as e:
             print(f"Dashboard load error: {e}")
-            stats            = {"investment": 0, "items": 0, "sales": 0, "profit": 0, "due": 0}
+            stats             = {"investment": 0, "items": 0, "sales": 0, "profit": 0, "due": 0}
             recent_sales_data = []
-            items            = []
+            items             = []
 
-        # লো-স্টক
+        # লো-স্টক অ্যালার্টের হিসাব (এটি আগের মতোই থাকবে)
         low_stock_items = []
         for i in items:
             try:
-                stock_val = float(i[6] or 0)
+                stock_val = float(i[6] or 0) # i[6] এখানে perfectly current_stock
                 u_size    = float(i[7] or 120)
                 u_type    = i[10] if len(i) > 10 else "alum"
                 threshold = 50 * u_size if u_type == "alum" else 50
@@ -145,14 +365,13 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-        # রিসেন্ট সেলস রো বিল্ড
-        # get_recent_sales → (profile_name[0], quantity[1], total[2], sale_date[3], sale_time[4])
+        # রিসেন্ট সেলস রো বিল্ড (আগের মতোই থাকবে)
         sale_rows = []
         for s in recent_sales_data:
             try:
                 name  = str(s[0] or "—")[:20]
                 total = float(s[2] or 0)
-                time_ = str(s[4] or s[3] or "—")   # sale_time পাওয়া গেলে সেটা, নাহলে date
+                time_ = str(s[4] or s[3] or "—")
                 sale_rows.append(
                     ft.DataRow(cells=[
                         ft.DataCell(ft.Text(name)),
@@ -163,7 +382,7 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-        # লো-স্টক রো বিল্ড
+        # লো-স্টক রো বিল্ড (আগের মতোই থাকবে)
         low_rows = []
         for item in low_stock_items[:5]:
             try:
@@ -180,6 +399,7 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
+        # মূল ড্যাশবোর্ড UI কন্টেইনার
         content_area.content = ft.Container(
             content=ft.Column([
                 ft.Row([
@@ -190,6 +410,7 @@ def main(page: ft.Page):
 
                 ft.Container(height=20),
 
+                # এখানে সরাসরি stats.get() দিয়ে ডাটাবেজের ভ্যালুগুলো কার্ডে বসে যাচ্ছে
                 ft.ResponsiveRow([
                     create_card("Total Investment",
                                 f"{stats.get('investment', 0):,.2f} TK",
@@ -199,7 +420,8 @@ def main(page: ft.Page):
                                 "blue", ft.Icons.INVENTORY_2),
                     create_card("Today's Sales",
                                 f"{stats.get('sales', 0):,.2f} TK",
-                                "green", ft.Icons.TRENDING_UP),
+                                "green", ft.Icons.TRENDING_UP,
+                                on_click=lambda e: show_pin_dialog(page)),
                     create_card("Total Due",
                                 f"{stats.get('due', 0):,.2f} TK",
                                 "red", ft.Icons.REPORT_GMAILERRORRED,
@@ -288,7 +510,7 @@ def main(page: ft.Page):
             ft.Container(
                 content=ft.Column([
                     ft.Icon(ft.Icons.STORE, size=50, color="orange"),
-                    ft.Text("Khondakar\nTraders", size=25, weight="bold"),
+                    ft.Text("CITY GLASS\n ART& THY ALUMINIUM", size=25, weight="bold"),
                 ]),
                 padding=ft.padding.only(top=40, bottom=20),
             ),
@@ -380,13 +602,17 @@ def main(page: ft.Page):
         threading.Thread(target=update_clock, daemon=True).start()
         page.update()
 
+    # আপনার লগইন ফাইলের handle_login ফাংশনটি দেখতে এমন হতে পারে:
     def handle_login(e):
-        global APP_PASSWORD
-        if pass_input.value == APP_PASSWORD:
-            load_dashboard()
-        else:
-            pass_input.error_text = "ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।"
-            page.update()
+       global APP_PASSWORD
+    # লোকাল স্টোরেজে সেটিংস থেকে কোনো নতুন পাসওয়ার্ড সেভ করা আছে কিনা তা চেক করা
+       saved_pin = page.client_storage.get("app_pin") or APP_PASSWORD
+    
+       if pass_input.value == saved_pin:
+        load_dashboard()
+       else:
+        pass_input.error_text = "ভুল পাসওয়ার্ড! আবার চেষ্টা করুন।"
+        page.update()
 
     def on_pass_change(e):
         if pass_input.error_text:
@@ -403,7 +629,7 @@ def main(page: ft.Page):
     login_screen = ft.Container(
         content=ft.Column([
             ft.Icon(ft.Icons.LOCK_PERSON, size=80, color="orange"),
-            ft.Text("Khondakar Traders", size=30, weight="bold"),
+            ft.Text("CITY GLASS ART & THY ALUMINIUM", size=30, weight="bold"),
             pass_input,
             ft.ElevatedButton("Unlock Dashboard", on_click=handle_login,
                               width=350, bgcolor="orange", color="white"),
@@ -418,63 +644,36 @@ def main(page: ft.Page):
     page.add(main_layout)
 
 
+# if __name__ == "__main__":
+#     import os
+#     # সার্ভার থেকে পোর্ট নম্বর নেওয়া, না থাকলে ডিফল্ট ৮০৮০ বা ৮৫০২
+#     port = int(os.getenv("PORT", 8080)) 
+    
+#     ft.app(
+#         target=main,
+#         assets_dir="assets",
+#         # হোস্টিংয়ের সময় view=None রাখা ভালো, এতে সার্ভার মোড কাজ করে
+#         view=None, 
+#         port=port
+# #     )
+# if __name__ == "__main__":
+#     # Flet অ্যাপ চালু হওয়ার ঠিক আগে ব্যাকগ্রাউন্ড থ্রেডটি ৫ সেকেন্ড ইন্টারভ্যাল দিয়ে স্টার্ট করা
+#     sync_thread = threading.Thread(target=start_sync_worker, args=(5,), daemon=True)
+#     sync_thread.start()
+    
+#     # আপনার মেইন Flet অ্যাপ রান করা (আগের প্যারামিটারগুলোসহ)
+#     ft.app(
+#         target=main, 
+#         assets_dir="assets",
+#         view=ft.AppView.WEB_BROWSER  # এটি দিলে সরাসরি ব্রাউজারে খুলবে
+#     )
+
 if __name__ == "__main__":
-    import os
-    # সার্ভার থেকে পোর্ট নম্বর নেওয়া, না থাকলে ডিফল্ট ৮০৮০ বা ৮৫০২
-    port = int(os.getenv("PORT", 8080)) 
-    
-    ft.app(
-        target=main,
-        assets_dir="assets",
-        # হোস্টিংয়ের সময় view=None রাখা ভালো, এতে সার্ভার মোড কাজ করে
-        view=None, 
-        port=port
+    sync_thread = threading.Thread(
+        target=start_sync_worker,
+        args=(5,),
+        daemon=True
     )
+    sync_thread.start()
 
-
-# ================================================================
-# PDF INVOICE GENERATOR
-# ================================================================
-def generate_invoice_pdf(order_id, customer_name, cart_items, total_amount):
-    # সার্ভারের টেম্পোরারি ডিরেক্টরি ব্যবহার করা
-    import tempfile
-    
-    # এটি সার্ভারের একটি অস্থায়ী জায়গায় ফাইল সেভ করবে
-    temp_dir = tempfile.gettempdir()
-    file_path = os.path.join(temp_dir, f"Invoice_{order_id}.pdf")
-
-    c = canvas.Canvas(file_path, pagesize=A4)
-    width, height = A4
-
-    c.setFont("Helvetica-Bold", 20)
-    c.drawCentredString(width / 2, height - 50, "KHONDAKAR TRADERS")
-    c.setFont("Helvetica", 10)
-    c.drawCentredString(width / 2, height - 65, "Stadium Lane, Bogura")
-    c.drawCentredString(width / 2, height - 78, "Contact: 01787-203830")
-    c.line(50, height - 90, 545, height - 90)
-
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, height - 120, f"Order No: {order_id}")
-    c.setFont("Helvetica", 12)
-    c.drawString(50, height - 140, f"Customer: {customer_name}")
-
-    c.line(50, height - 160, 545, height - 160)
-    c.drawString(55,  height - 175, "Item Name")
-    c.drawString(300, height - 175, "Qty")
-    c.drawString(400, height - 175, "Price")
-    c.drawString(480, height - 175, "Total")
-    c.line(50, height - 185, 545, height - 185)
-
-    y = height - 205
-    for item in cart_items:
-        c.drawString(55,  y, str(item.get('profile', '')))
-        c.drawString(305, y, str(item.get('qty', '')))
-        c.drawString(405, y, f"{item.get('price', 0):.2f}")
-        c.drawString(485, y, f"{item.get('total', 0):.2f}")
-        y -= 20
-
-    c.line(50, y, 545, y)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(400, y - 30, f"Net Payable: {total_amount:.2f} TK")
-    c.save()
-    return file_path
+    ft.app(target=main, assets_dir="assets")

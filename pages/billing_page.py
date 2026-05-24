@@ -24,7 +24,7 @@ def open_pdf(path):
 
 
 # ============================================================
-# PDF GENERATOR
+# PDF GENERATOR (FIXED BRAND REPETITION)
 # ============================================================
 def save_pdf_invoice(order_no, customer_name, cart_items, totals, extra_info):
     try:
@@ -38,9 +38,9 @@ def save_pdf_invoice(order_no, customer_name, cart_items, totals, extra_info):
         width, height = A4
 
         c.setFont("Helvetica-Bold", 22)
-        c.drawCentredString(width / 2, height - 48, "KHONDAKAR TRADERS")
+        c.drawCentredString(width / 2, height - 48, "CITY GLASS ART & THY ALUMINIUM")
         c.setFont("Helvetica", 10)
-        c.drawCentredString(width / 2, height - 63, "Stadium Lane, Bogura")
+        c.drawCentredString(width / 2, height - 63, "Park Road, Ghorapotti, Sutrapur, Bogura")
         c.drawCentredString(width / 2, height - 76,
             f"Mob: {extra_info.get('phone', '')} | Email: khondakartraders@gmail.com")
         c.line(50, height - 88, 545, height - 88)
@@ -71,9 +71,13 @@ def save_pdf_invoice(order_no, customer_name, cart_items, totals, extra_info):
         y -= 18
         c.setFont("Helvetica", 9)
         for i, item in enumerate(cart_items or []):
+            # ── প্রোফাইল নাম থেকে ব্র্যাকেটের ভেতরের ব্র্যান্ড বাদ দেওয়ার লজিক ──
+            raw_profile = str(item.get("profile", ""))
+            clean_profile = raw_profile.split('(')[0].strip()
+
             c.drawString(55,  y, str(i + 1))
             c.drawString(75,  y, str(item.get("die_no",  ""))[:10])
-            c.drawString(125, y, str(item.get("profile", ""))[:16])
+            c.drawString(125, y, clean_profile[:16]) # 👈 এখানে এখন ব্র্যান্ড ছাড়া ক্লিন নাম প্রিন্ট হবে
             c.drawString(235, y, str(item.get("brand",   ""))[:10])
             c.drawString(285, y, str(item.get("spec",    ""))[:10])
             c.drawString(345, y, str(item.get("color",   ""))[:9])
@@ -125,10 +129,10 @@ def get_billing_data():
     conn   = sqlite3.connect("inventory.db")
     cursor = conn.cursor()
     shop_info = {
-        "shop_name":    "KHONDAKAR TRADERS",
-        "shop_address": "Stadium Lane, Bogura",
+        "shop_name":    "CITY GLASS ART & THY ALUMINIUM",
+        "shop_address": "Park Road, Ghorapotti, Sutrapur, Bogura",
         "shop_email":   "khondakartraders@gmail.com",
-        "shop_phone1":  "01787-203830",
+        "shop_phone1":  "01719-252128",
         "shop_phone2":  "01641-513276",
     }
     order_no = 1001
@@ -263,7 +267,7 @@ def billing_page(page, cart_items=None, totals=None):
     c_paid.on_change         = sync_calc
 
     # ============================================================
-    # DB SAVE
+    # DB SAVE (সংশোধিত ও লাইভ স্টক ফিক্সড)
     # ============================================================
     def confirm_sell_to_db():
         try:
@@ -282,18 +286,23 @@ def billing_page(page, cart_items=None, totals=None):
                 die_no  = item.get("die_no", "")
                 raw_qty = float(item.get("raw_qty", 0))
 
+                # ✅ ফিক্সড: current_stock কলামটি কুয়েরিতে নিয়ে আসা হলো
                 cursor.execute(
-                    "SELECT total_in, buy_price, unit_in, unit_type FROM inventory WHERE die_no=?",
+                    "SELECT current_stock, buy_price, unit_in, unit_type FROM inventory WHERE die_no=?",
                     (die_no,)
                 )
                 res = cursor.fetchone()
                 if res:
-                    current_stock = float(res[0] or 0)
+                    current_stock = float(res[0] or 0)  # এখন সরাসরি current_stock রিড হবে
                     buy_price     = float(res[1] or 0)
                     piece_len     = float(res[2] or 120)
                     u_type        = res[3] or "alum"
+                    
+                    # নতুন স্টক হিসাব
                     new_stock     = round(current_stock - raw_qty, 2)
-                    cursor.execute("UPDATE inventory SET total_in=? WHERE die_no=?", (new_stock, die_no))
+                    
+                    # ✅ জাদুকরী ফিক্স: total_in এর বদলে current_stock কলাম আপডেট করা হলো
+                    cursor.execute("UPDATE inventory SET current_stock=? WHERE die_no=?", (new_stock, die_no))
 
                     item_cost   = (raw_qty / piece_len) * buy_price if (u_type == "alum" and piece_len > 0) else raw_qty * buy_price
                     item_total  = float(item.get("total", 0))
@@ -305,8 +314,8 @@ def billing_page(page, cart_items=None, totals=None):
                             customer_name, customer_phone, customer_address,
                             die_no, profile_name, spec, color,
                             quantity, price, total,
-                            discount, profit, paid_amount, due_amount
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                            discount, profit, paid_amount, due_amount, is_synced
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
                     """, (
                         str(order_no), sale_date, sale_time,
                         c_name.value or "Cash", c_phone.value or "", c_address.value or "",

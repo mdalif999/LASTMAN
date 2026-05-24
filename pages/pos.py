@@ -13,6 +13,8 @@ def pos_page(page, navigate=None):
         get_inventory_items(),
         key=lambda x: str(x[3]).lower()
     )
+    all_item_inputs = {}
+    all_item_amounts = {}
 
     brands = sorted(list(set(
         str(item[1]).strip()
@@ -139,17 +141,28 @@ def pos_page(page, navigate=None):
         label_style=ft.TextStyle(weight=ft.FontWeight.W_700, color=ft.Colors.BLACK),
         on_change=lambda _: calculate_totals()
     )
-
-    # =========================
-    # CLEAR ALL
-    # =========================
+# ============================================================
+    # CLEAR ALL (FIXED: INPUT TEXT REMAINING BUG)
+    # ============================================================
     def clear_all(e):
+        # ১. আগের মেমোরি ক্লিয়ার
         selected_items.clear()
         page.session.set("selected_items", {})
         overstock_items.clear()
         discount_input.value = "0"
-        load_table(search_field.value)
+        
+        # 🚨 ঠিক এই ২টা লাইন আপনার কোডে যোগ করুন 🚨
+        # এটি মেইন টেবিলের আটকে থাকা ইনপুট বক্স ও অ্যামাউন্টের মেমোরি পুরোপুরি ধুয়ে মুছে সাফ করে দেবে
+        all_item_inputs.clear()
+        all_item_amounts.clear()
+
+        # ২. সার্চ ফিল্ড খালি করে ফ্রেশ টেবিল লোড করা
+        search_field.value = ""
+        load_table("")
+        
+        # ৩. হিসাব নিকাশ আপডেট
         calculate_totals()
+        page.update()
 
     # =========================
     # GO TO BILL
@@ -296,7 +309,7 @@ def pos_page(page, navigate=None):
                 selected_items[item[0]] = {
                     "id_db":        item[0],
                     "code":         item[2],
-                    "profile_name": item[3],
+                    "profile_name": f"{str(item[3]).strip()} ({str(item[1]).strip()})",
                     "brand":        str(item[1]).strip(),   # ✅ brand
                     "spec":         spec_display,
                     "brand_color":  f"{str(item[1]).strip()} ({str(item[4]).strip()})",
@@ -393,39 +406,61 @@ def pos_page(page, navigate=None):
             if inch_rem > 0:     spec_display += f" {inch_rem} inc"
             if item[5]:          spec_display += f" ({item[5]})"
 
-            amount_display = ft.Text("0.00", weight=ft.FontWeight.BOLD, color="black", size=14)
-            row_inputs     = []
+            
+            if item[0] not in all_item_inputs:
+                row_inputs = []
+                amount_display = ft.Text("0.00", weight=ft.FontWeight.BOLD, color="black", size=14)
+                
+                input_style = {
+                    "width": 65, "height": 60, "text_size": 18,
+                    "text_style": ft.TextStyle(weight=ft.FontWeight.BOLD),
+                    "dense": False, "color": "blue", "border_color": "black",
+                    "content_padding": 5, "text_align": ft.TextAlign.CENTER,
+                    "cursor_height": 30, "input_filter": num_filter,
+                }
 
-            input_style = {
-                "width": 65, "height": 60, "text_size": 18,
-                "text_style": ft.TextStyle(weight=ft.FontWeight.BOLD),
-                "dense": False, "color": "blue", "border_color": "black",
-                "content_padding": 5, "text_align": ft.TextAlign.CENTER,
-                "cursor_height": 30, "input_filter": num_filter,
-            }
+                change_event = (
+                    lambda e, i=item, r=row_inputs, a=amount_display:
+                    on_input_change(i, r, a)
+                )
 
-            change_event = (
-                lambda e, i=item, r=row_inputs, a=amount_display:
-                on_input_change(i, r, a)
-            )
-
-            if u_type == "alum":
-                for h in ["P", "F", "I"]:
-                    row_inputs.append(ft.TextField(hint_text=h, **input_style, on_change=change_event))
-            elif u_type == "sft":
-                for h in ["Q", "H", "W"]:
-                    row_inputs.append(ft.TextField(hint_text=h, **input_style, on_change=change_event))
+                if u_type == "alum":
+                    for h in ["P", "F", "I"]:
+                        row_inputs.append(ft.TextField(hint_text=h, **input_style, on_change=change_event))
+                elif u_type == "sft":
+                    for h in ["Q", "H", "W"]:
+                        row_inputs.append(ft.TextField(hint_text=h, **input_style, on_change=change_event))
+                else:
+                    row_inputs.append(ft.TextField(
+                        hint_text="Qty", width=170, height=55, dense=True,
+                        color="black", border_color="black", text_align="center",
+                        input_filter=num_filter, on_change=change_event
+                    ))
+                
+                all_item_inputs[item[0]] = row_inputs
+                all_item_amounts[item[0]] = amount_display
             else:
-                row_inputs.append(ft.TextField(
-                    hint_text="Qty", width=170, height=55, dense=True,
-                    color="black", border_color="black", text_align="center",
-                    input_filter=num_filter, on_change=change_event
-                ))
+                row_inputs = all_item_inputs[item[0]]
+                amount_display = all_item_amounts[item[0]]
+
+            profile_name_text = str(item[3])
+            profile_cell_content = ft.Container(
+                content=ft.ListView(
+                    [ft.Text(profile_name_text, color="black", weight="bold", size=13)],
+                    horizontal=True,
+                ),
+                width=180,  # নাম বড় হলে ডানে স্ক্রোল হবে, টেবিল ভাঙবে না
+                height=40,
+                alignment=ft.alignment.center_left
+            )
 
             main_table.rows.append(ft.DataRow(cells=[
                 ft.DataCell(ft.Text(str(idx + 1),               color="black")),
                 ft.DataCell(ft.Text(str(item[2]),               color="black")),
-                ft.DataCell(ft.Text(str(item[3]),               color="black")),
+                ft.DataCell(ft.Text(
+                 f"{str(item[3]).strip()} ({str(item[1]).strip()})", # item[3] = Profile Name, item[1] = Brand Name
+                color="black", weight="bold", size=14
+                  )),
                 ft.DataCell(ft.Text(spec_display,               color="black")),
                 ft.DataCell(ft.Text(str(item[4]),               color="black")),
                 ft.DataCell(ft.Text(stock_display,              color="black")),
@@ -452,17 +487,31 @@ def pos_page(page, navigate=None):
 
         cart_rows = []
         for sl, (item_id, data) in enumerate(selected_items.items(), start=1):
-            cart_rows.append(ft.DataRow(cells=[
-                ft.DataCell(ft.Text(str(sl),                              color="black", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(str(data.get("code", "")),            color="black", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(str(data.get("profile_name", "")),    color="black", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(str(data.get("spec", "")),            color="black", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(str(data.get("brand_color", "-")),    color="black", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(str(data.get("qty_display", "")),     color="blue_900", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(f"{float(data.get('unit_price', 0)):,.2f}", color="black", weight=ft.FontWeight.BOLD)),
-                ft.DataCell(ft.Text(f"{float(data.get('amount', 0)):,.2f}",     color="green_800", weight=ft.FontWeight.BOLD)),
-            ]))
+            
+            # কার্ট পপআপের নাম বড় হলেও যেন টেবিল ফিক্সড থাকে
+            cart_profile_cell = ft.Container(
+                content=ft.ListView(
+                    [ft.Text(str(data.get("profile_name", "")), color="black", weight=ft.FontWeight.BOLD, size=15)],
+                    horizontal=True,
+                ),
+                width=220,  # কার্ট উইন্ডোর জন্য স্ট্যান্ডার্ড সেফ উইডথ
+                height=35,
+                alignment=ft.alignment.center_left
+            )
 
+            cart_rows.append(ft.DataRow(cells=[
+    ft.DataCell(ft.Text(str(sl), color="black", weight=ft.FontWeight.BOLD)),
+    ft.DataCell(ft.Text(str(data.get("code", "")), color="black", weight=ft.FontWeight.BOLD)),
+    ft.DataCell(cart_profile_cell),  
+    ft.DataCell(ft.Text(str(data.get("spec", "")), color="black", weight=ft.FontWeight.BOLD)),
+    # ব্র্যান্ড/কালার কলামের কালার black করে দিয়েছি
+    ft.DataCell(ft.Text(str(data.get("brand_color", "-")), color="black", weight=ft.FontWeight.BOLD)),
+    # কোয়ান্টিটি কলামের কালার blue_900 থেকে black এ নিয়ে এসেছি
+    ft.DataCell(ft.Text(str(data.get("qty_display", "")), color="black", weight=ft.FontWeight.BOLD)),
+    ft.DataCell(ft.Text(f"{float(data.get('unit_price', 0)):,.2f}", color="black", weight=ft.FontWeight.BOLD)),
+    # অ্যামাউন্ট কলামের কালার green_800 থেকে black এ নিয়ে এসেছি
+    ft.DataCell(ft.Text(f"{float(data.get('amount', 0)):,.2f}", color="black", weight=ft.FontWeight.BOLD)),
+]))
         sub_total = sum(d["amount"] for d in selected_items.values())
         try:    d_perc = float(discount_input.value or 0)
         except: d_perc = 0

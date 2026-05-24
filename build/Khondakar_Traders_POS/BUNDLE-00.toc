@@ -1,0 +1,3 @@
+([('Khondakar_Traders_POS',
+   '/Users/alif/code/APP/dist/Khondakar_Traders_POS',
+   'EXECUTABLE')],)
