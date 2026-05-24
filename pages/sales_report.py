@@ -142,7 +142,8 @@ def sales_report_page(page):
             title=ft.Container(
                 bgcolor="#1a237e",
                 border_radius=ft.border_radius.only(top_left=14, top_right=14),
-                padding=ft.padding.symmetric(horizontal=20, vertical=14),
+               padding=ft.Padding(left=20, right=20, top=14, bottom=14),
+
                 content=ft.Row([
                     ft.Icon(ft.Icons.RECEIPT_LONG, color="white", size=26),
                     ft.Column([
@@ -193,7 +194,8 @@ def sales_report_page(page):
                         bgcolor="#f7f9ff",
                         border=ft.border.all(1, "black12"),
                         border_radius=10,
-                        padding=ft.padding.symmetric(horizontal=20, vertical=14),
+                        padding=ft.Padding(left=20, right=20, top=14, bottom=14),
+
                         content=ft.Row([
                             ft.Column([
                                 ft.Text(f"Total Items : {len(items)}",

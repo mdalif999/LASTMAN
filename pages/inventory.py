@@ -28,7 +28,10 @@ def inventory_page(page):
             bgcolor="#EEF4FF", color="black",
             label_style=ft.TextStyle(color="#1565C0", size=11, weight="bold"),
             text_style=ft.TextStyle(color="black", weight="bold", size=14),
-            content_padding=ft.padding.symmetric(horizontal=6, vertical=8),
+            # content_padding=ft.padding.symmetric(horizontal=6, vertical=8),
+            # ✅ এটা দাও
+            content_padding=ft.Padding(left=6, right=6, top=8, bottom=8),
+
             height=56,
         )
         def on_focus(e):
@@ -129,8 +132,10 @@ def inventory_page(page):
         if not mobile:
             inventory_list.controls.append(ft.Container(
                 bgcolor="#e8eaf6",
-                padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                border=ft.border.only(bottom=ft.BorderSide(2, "black26")),
+                padding=ft.Padding(left=12, right=12, top=10, bottom=10),
+
+                border=ft.Border(left=None, right=None, top=None, bottom=ft.BorderSide(2, "black26")),
+
                 content=ft.Row([
                     ft.Text("SL",                   width=38,  weight="bold", color="black", size=13),
                     ft.Text("Code",                 width=85,  weight="bold", color="black", size=13),
@@ -260,7 +265,8 @@ def inventory_page(page):
                     card = ft.Container(
                         bgcolor="white", border_radius=12, padding=14,
                         border=ft.border.all(2, "#1565C0"),
-                        margin=ft.margin.only(bottom=10),
+                        margin=ft.Margin(left=0, right=0, top=0, bottom=10),
+
                         content=ft.Column([
                             ft.Text(f"{item[3]}  ({item[1]})", weight="bold", color="black", size=15),
                             ft.Text(f"Code: {item[2]}  •  Color: {item[4]}  •  {spec_display}",
@@ -283,7 +289,8 @@ def inventory_page(page):
                     card = ft.Container(
                         bgcolor="white", border_radius=10, padding=12,
                         border=ft.border.all(1, "black12"),
-                        margin=ft.margin.only(bottom=8),
+                        margin=ft.Margin(left=0, right=0, top=0, bottom=8),
+
                         content=ft.Column([
                             ft.Row([
                                 ft.Column([
@@ -322,8 +329,10 @@ def inventory_page(page):
             else:
                 if editing_id != item[0]:
                     inventory_list.controls.append(ft.Container(
-                        padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                        border=ft.border.only(bottom=ft.BorderSide(1, "black12")),
+                        padding=ft.Padding(left=12, right=12, top=10, bottom=10),
+
+                        border=ft.Border(left=None, right=None, top=None, bottom=ft.BorderSide(1, "black12")),
+
                         content=ft.Row([
                             ft.Text(str(idx),                  width=38,  color="black",  size=13),
                             ft.Text(str(item[2] or ""),        width=85,  color="black",  size=13),
@@ -396,7 +405,8 @@ def inventory_page(page):
                             ], spacing=2),
                             bgcolor="#F0F7FF", border=ft.border.all(1, "#1565C0"),
                             border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=6, vertical=4),
+                           padding=ft.Padding(left=6, right=6, top=4, bottom=4),
+
                             width=175,
                         )
                         save_fn = save_d
@@ -441,7 +451,8 @@ def inventory_page(page):
                             ], spacing=2),
                             bgcolor="#F0F7FF", border=ft.border.all(1, "#1565C0"),
                             border_radius=8,
-                            padding=ft.padding.symmetric(horizontal=6, vertical=4),
+                            padding=ft.Padding(left=6, right=6, top=4, bottom=4),
+
                             width=110,
                         )
                         save_fn = save_pcs_d
@@ -449,8 +460,10 @@ def inventory_page(page):
                     inventory_list.controls.append(ft.Container(
                         bgcolor="#F8F9FF",
                         border=ft.border.all(1.5, "#1565C0"), border_radius=10,
-                        padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                        margin=ft.margin.symmetric(vertical=2),
+                        padding=ft.Padding(left=12, right=12, top=10, bottom=10),
+
+                        margin=ft.Margin(left=0, right=0, top=2, bottom=2),
+
                         content=ft.Row([
                             ft.Text(str(idx),           size=13, color="black", width=38),
                             ft.Text(str(item[2] or ""), size=13, color="black", width=85),

@@ -35,7 +35,8 @@ def settings_view(page):
 
     user_logo = ft.Container(
         width=120, height=120, bgcolor="orange100", border_radius=60,
-        border=ft.border.all(2, "orange"), alignment=ft.alignment.center,
+        border=ft.Border(left=ft.BorderSide(2, "orange"), right=ft.BorderSide(2, "orange"), top=ft.BorderSide(2, "orange"), bottom=ft.BorderSide(2, "orange")), alignment=ft.alignment.Alignment(0, 0),
+
         content=get_logo_content(current_logo_data)
     )
 
@@ -111,7 +112,8 @@ def settings_view(page):
                 on_click=lambda _: page.launch_url("mailto:alif.dev@email.com")
             ),
         ], spacing=5),
-        padding=15, bgcolor="#1e2b5e", border_radius=15, margin=ft.margin.only(top=20)
+        padding=15, bgcolor="#1e2b5e", border_radius=15, margin=ft.Margin(left=0, right=0, top=20, bottom=0)
+
     )
 
     # নেভিগেশন লজিক

@@ -436,7 +436,8 @@ def billing_page(page, cart_items=None, totals=None):
                     size=13, color="black", text_align="center"
                 ),
             ], horizontal_alignment="center", spacing=2),
-            margin=ft.margin.only(bottom=10),
+            margin=ft.Margin(left=0, right=0, top=0, bottom=10),
+
         ),
         ft.Divider(height=2, color="black"),
 
@@ -445,7 +446,10 @@ def billing_page(page, cart_items=None, totals=None):
             bgcolor="#f7f9ff",
             border=ft.border.all(1, "black12"),
             border_radius=10,
-            padding=ft.padding.symmetric(horizontal=20, vertical=14),
+            #padding=ft.padding.symmetric(horizontal=20, vertical=14),
+            # ✅ এটা দাও
+            padding=ft.Padding(left=20, right=20, top=14, bottom=14),
+
             content=ft.Row([
                 ft.Column([
                     c_name,
@@ -532,7 +536,11 @@ def billing_page(page, cart_items=None, totals=None):
                             ft.Text("Due Amount",  size=13, color="black", weight="bold"),
                             ft.Container(
                                 content=disp_due_text,
-                                padding=ft.padding.symmetric(vertical=9, horizontal=12),
+                                #padding=ft.padding.symmetric(vertical=9, horizontal=12),
+                                 # ✅ এটা দাও
+                                padding=ft.Padding(left=12, right=12, top=9, bottom=9),
+ 
+
                                 border=ft.border.all(1, "black26"),
                                 border_radius=5, width=140, bgcolor="white",
                             ),
@@ -604,15 +612,20 @@ def billing_page(page, cart_items=None, totals=None):
                                   tooltip="Back to Sales", on_click=go_back),
                     ft.Text("Generate Invoice", size=20, weight="bold", color="black"),
                 ], spacing=10),
-                padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                # padding=ft.padding.symmetric(horizontal=15, vertical=8),
+                    # ✅ এটা দাও
+                padding=ft.Padding(left=15, right=15, top=8, bottom=8),
+
                 bgcolor="#f5f5f5",
-                border=ft.border.only(bottom=ft.BorderSide(1, "black12")),
+                border=ft.Border(left=None, right=None, top=None, bottom=ft.BorderSide(1, "black12")),
+
             ),
             ft.Container(
                 content=invoice_ui,
                 bgcolor="white", padding=40,
                 border=ft.border.all(1, "black12"),
-                margin=ft.margin.all(10),
+               margin=ft.Margin(left=10, right=10, top=10, bottom=10),
+
                 alignment=ft.alignment.top_center,
             ),
         ], scroll=ft.ScrollMode.AUTO),

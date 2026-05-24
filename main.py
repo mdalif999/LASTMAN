@@ -503,7 +503,10 @@ def main(page: ft.Page):
     def sidebar_btn(icon, label, target):
         return ft.Container(
             content=ft.Row([ft.Icon(icon, color="white"), ft.Text(label, size=18, weight="bold")], spacing=20),
-            padding=ft.padding.symmetric(vertical=15, horizontal=25),
+            # padding=ft.padding.symmetric(vertical=15, horizontal=25),
+            # ✅ এটা দাও
+            padding=ft.Padding(left=25, right=25, top=15, bottom=15),
+  
             on_click=lambda _: navigate(target),
             border_radius=10,
             on_hover=lambda e: (

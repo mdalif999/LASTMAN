@@ -221,7 +221,8 @@ def history_page(page):
                 if mobile:
                     list_view.controls.append(ft.Container(
                         bgcolor="#1e2b5e", border_radius=10, padding=12,
-                        border=ft.border.only(left=ft.BorderSide(4, color_theme)),
+                        border=ft.Border(left=ft.BorderSide(4, color_theme), right=None, top=None, bottom=None),
+
                         content=ft.Column([
                             ft.Row([
                                 ft.Text(label, size=13, weight="bold", color=color_theme, expand=True),
@@ -233,14 +234,19 @@ def history_page(page):
                     ))
                 else:
                     list_view.controls.append(ft.Container(
-                        padding=ft.padding.symmetric(horizontal=10, vertical=9),
-                        border=ft.border.only(bottom=ft.BorderSide(1, "white10")),
+                        #padding=ft.padding.symmetric(horizontal=10, vertical=9),
+                        # ✅ এটা দাও
+                        padding=ft.Padding(left=10, right=10, top=9, bottom=9),
+
+                        border=ft.Border(left=None, right=None, top=None, bottom=ft.BorderSide(1, "white10")),
+
                         content=ft.Row([
                             ft.Text(timestamp, size=12, color="white60", width=185),
                             ft.Container(
                                 content=ft.Text(label, size=13, weight="bold", color=color_theme),
                                padding=ft.Padding(left=6, right=0, top=0, bottom=0),
-                                border=ft.border.only(left=ft.BorderSide(3, color_theme)),
+                                border=ft.Border(left=ft.BorderSide(3, color_theme), right=None, top=None, bottom=None),
+
                                 width=155,
                             ),
                             ft.Text(product_display, size=13, color="white", weight="bold", width=250),
@@ -256,7 +262,7 @@ def history_page(page):
     update_list()
 
     return ft.Container(
-        padding=ft.padding.all(14), expand=True,
+       padding=ft.Padding(left=14, right=14, top=14, bottom=14), expand=True,
         content=ft.Column([
             ft.Row([
                 ft.Icon(ft.Icons.HISTORY, color="orange", size=26),
