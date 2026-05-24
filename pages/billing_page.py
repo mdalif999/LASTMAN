@@ -469,7 +469,7 @@ def billing_page(page, cart_items=None, totals=None):
                 ft.Row([ft.Text("Contact  : ", weight="bold", color="black", size=13), disp_phone]),
                 ft.Row([ft.Text("Address  : ", weight="bold", color="black", size=13), disp_address]),
             ], spacing=3),
-            padding=ft.padding.only(bottom=10),
+            padding=ft.Padding(left=0, right=0, top=0, bottom=10),
         ),
 
         # ── Items table ───────────────────────────────────────

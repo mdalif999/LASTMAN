@@ -625,7 +625,7 @@ def inventory_page(page):
             ft.Container(
                 content=inventory_list, expand=True,
                 border=ft.border.all(1, "black12"), border_radius=8,
-                padding=ft.padding.only(bottom=8),
+                padding=ft.Padding(left=0, right=0, top=0, bottom=8),
             ),
         ], spacing=6),
     )

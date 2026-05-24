@@ -232,7 +232,10 @@ def sales_report_page(page):
                         ], alignment="spaceBetween"),
                     ),
                 ], scroll=ft.ScrollMode.AUTO),
-                padding=ft.padding.only(left=16, right=16, top=16, bottom=8),
+                # padding=ft.padding.only(left=16, right=16, top=16, bottom=8),
+                padding=ft.Padding(left=16, right=16, top=16, bottom=8),
+
+
             ),
             actions=[
                 ft.TextButton(

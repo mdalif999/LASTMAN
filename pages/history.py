@@ -239,7 +239,7 @@ def history_page(page):
                             ft.Text(timestamp, size=12, color="white60", width=185),
                             ft.Container(
                                 content=ft.Text(label, size=13, weight="bold", color=color_theme),
-                                padding=ft.padding.only(left=6),
+                               padding=ft.Padding(left=6, right=0, top=0, bottom=0),
                                 border=ft.border.only(left=ft.BorderSide(3, color_theme)),
                                 width=155,
                             ),

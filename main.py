@@ -518,7 +518,8 @@ def main(page: ft.Page):
                     ft.Icon(ft.Icons.STORE, size=50, color="orange"),
                     ft.Text("CITY GLASS\n ART& THY ALUMINIUM", size=25, weight="bold"),
                 ]),
-                padding=ft.padding.only(top=40, bottom=20),
+                # padding=ft.padding.only(top=40, bottom=20),
+                padding=ft.Padding(top=40, bottom=20, left=0, right=0),
             ),
             ft.Divider(height=1, color="white10"),
             sidebar_btn(ft.Icons.DASHBOARD,      "Dashboard",  "dashboard"),
@@ -650,29 +651,6 @@ def main(page: ft.Page):
     page.add(main_layout)
 
 
-# if __name__ == "__main__":
-#     import os
-#     # সার্ভার থেকে পোর্ট নম্বর নেওয়া, না থাকলে ডিফল্ট ৮০৮০ বা ৮৫০২
-#     port = int(os.getenv("PORT", 8080)) 
-    
-#     ft.app(
-#         target=main,
-#         assets_dir="assets",
-#         # হোস্টিংয়ের সময় view=None রাখা ভালো, এতে সার্ভার মোড কাজ করে
-#         view=None, 
-#         port=port
-# #     )
-# if __name__ == "__main__":
-#     # Flet অ্যাপ চালু হওয়ার ঠিক আগে ব্যাকগ্রাউন্ড থ্রেডটি ৫ সেকেন্ড ইন্টারভ্যাল দিয়ে স্টার্ট করা
-#     sync_thread = threading.Thread(target=start_sync_worker, args=(5,), daemon=True)
-#     sync_thread.start()
-    
-#     # আপনার মেইন Flet অ্যাপ রান করা (আগের প্যারামিটারগুলোসহ)
-#     ft.app(
-#         target=main, 
-#         assets_dir="assets",
-#         view=ft.AppView.WEB_BROWSER  # এটি দিলে সরাসরি ব্রাউজারে খুলবে
-#     )
 
 if __name__ == "__main__":
     sync_thread = threading.Thread(
