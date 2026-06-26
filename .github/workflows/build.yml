@@ -26,7 +26,13 @@ jobs:
 
     - name: Build macOS App
       run: |
-        flet build macos --release
+        flet build macos
+
+    - name: Clean Unnecessary Heavy Files
+      run: |
+        # বিল্ড সাইজ ছোট করার জন্য ডাব্লিউইবি এবং ডিবাগিং কম্পোনেন্ট ট্রিম করা
+        rm -rf build/macos/web || true
+        rm -rf build/macos/ios || true
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
