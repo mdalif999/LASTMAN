@@ -1,70 +1,117 @@
 import flet as ft
-from database import get_profit_sum 
+from database import get_profit_sum, get_brand_profit_summary
+
 
 def ProfitReportPage(page):
-    # --- স্টেট এবং ডাটাবেজ লজিক ---
-    profit_display = ft.Text("0.00 TK", size=45, weight="bold", color="greenaccent")
-    total_sales_display = ft.Text("Total Sales: 0.00 TK", size=18, color="white70")
-    
-    def refresh_profit(period="today"):
-        # ডাটাবেজ থেকে আসল ডেটা আনা হচ্ছে
+
+    profit_display     = ft.Text("0.00 TK", size=45, weight="bold", color="greenaccent")
+    total_sales_display = ft.Text("", size=16, color="white70")
+    brand_table_rows   = []
+
+    brand_table = ft.DataTable(
+        bgcolor="#1A233A",
+        border=ft.border.all(1, "#2A3A5A"),
+        horizontal_lines=ft.BorderSide(1, "#2A3A5A"),
+        vertical_lines=ft.BorderSide(1, "#2A3A5A"),
+        heading_row_color="#0F172A",
+        column_spacing=30,
+        columns=[
+            ft.DataColumn(ft.Text("Brand",    color="white70", weight="bold")),
+            ft.DataColumn(ft.Text("Gross",    color="white70", weight="bold"), numeric=True),
+            ft.DataColumn(ft.Text("Discount", color="orange",  weight="bold"), numeric=True),
+            ft.DataColumn(ft.Text("Net",      color="white70", weight="bold"), numeric=True),
+            ft.DataColumn(ft.Text("Profit",   color="greenaccent", weight="bold"), numeric=True),
+        ],
+        rows=brand_table_rows,
+    )
+
+    def refresh(period="today"):
+        # overall profit
         p, s = get_profit_sum(period)
-        
-        # UI আপডেট করা
-        profit_display.value = f"{p:,.2f} TK"
-        total_sales_display.value = f"Total Sales in this period: {s:,.2f} TK"
+        profit_display.value      = f"{p:,.2f} TK"
+        profit_display.color      = "greenaccent" if p >= 0 else "red"
+        total_sales_display.value = f"Gross Sale: {s:,.2f} TK"
+
+        # brand wise table
+        brand_table.rows.clear()
+        rows = get_brand_profit_summary(period)
+
+        for brand, gross, net, discount, profit in rows:
+            profit  = profit  or 0.0
+            gross   = gross   or 0.0
+            net     = net     or 0.0
+            discount = discount or 0.0
+
+            brand_table.rows.append(ft.DataRow(cells=[
+                ft.DataCell(ft.Text(str(brand or "Unknown"), color="white")),
+                ft.DataCell(ft.Text(f"{gross:,.2f}",   color="white")),
+                ft.DataCell(ft.Text(f"{discount:,.2f}", color="orange")),
+                ft.DataCell(ft.Text(f"{net:,.2f}",     color="white")),
+                ft.DataCell(ft.Text(
+                    f"{profit:,.2f}",
+                    color="greenaccent" if profit >= 0 else "red",
+                    weight="bold"
+                )),
+            ]))
+
         page.update()
 
-    # --- ফিল্টার বাটন লজিক ---
     def filter_clicked(e):
         for btn in filter_row.controls:
             btn.bgcolor = ft.Colors.BLUE_GREY_800
         e.control.bgcolor = ft.Colors.BLUE_700
-        
-        # বাটনের data প্রপার্টি অনুযায়ী ডাটাবেজে রিকোয়েস্ট পাঠানো
-        refresh_profit(e.control.data)
+        refresh(e.control.data)
         page.update()
 
-    # ফিল্টার রো
     filter_row = ft.Row([
-        ft.Container(content=ft.Text("Today"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_700, data="today", on_click=filter_clicked),
-        ft.Container(content=ft.Text("This Month"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_800, data="month", on_click=filter_clicked),
-        ft.Container(content=ft.Text("This Year"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_800, data="year", on_click=filter_clicked),
-        ft.Container(content=ft.Text("All Time"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_800, data="all", on_click=filter_clicked),
+        ft.Container(content=ft.Text("Today",      color="white"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_700,      data="today", on_click=filter_clicked),
+        ft.Container(content=ft.Text("This Month", color="white"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_800, data="month", on_click=filter_clicked),
+        ft.Container(content=ft.Text("This Year",  color="white"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_800, data="year",  on_click=filter_clicked),
+        ft.Container(content=ft.Text("All Time",   color="white"), padding=10, border_radius=10, bgcolor=ft.Colors.BLUE_GREY_800, data="all",   on_click=filter_clicked),
     ], alignment=ft.MainAxisAlignment.CENTER, spacing=10)
 
-    # --- পেজ লেআউট ---
     content = ft.Column([
         ft.Row([
-            ft.IconButton(ft.Icons.ARROW_BACK_IOS_NEW, icon_color="white", on_click=lambda _: page.go("/")),
             ft.Text("Profit Analysis Report", size=24, weight="bold", color="white"),
-        ], alignment=ft.MainAxisAlignment.START),
-        
-        ft.Divider(height=20, color="transparent"),
-        
+        ]),
+
+        ft.Divider(height=15, color="transparent"),
+
+        # top summary card
         ft.Container(
             content=ft.Column([
-                ft.Icon(ft.Icons.MONETIZATION_ON_OUTLINED, size=50, color="greenaccent"),
-                ft.Text("Net Profit Amount", size=16, color="white60"),
+                ft.Icon(ft.Icons.MONETIZATION_ON_OUTLINED, size=45, color="greenaccent"),
+                ft.Text("Net Profit", size=15, color="white60"),
                 profit_display,
                 total_sales_display,
-            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=10),
-            padding=40,
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+            padding=35,
             bgcolor="#1A233A",
             border_radius=20,
             alignment=ft.alignment.center,
-            width=600,
+            width=500,
         ),
-        
-        ft.Divider(height=30, color="transparent"),
-        
-        ft.Text("Select Time Period", size=16, color="white70"),
-        filter_row,
-        
-    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER)
 
-    # শুরুতে আজকের প্রফিট অটো লোড হবে
-    refresh_profit("today")
+        ft.Divider(height=20, color="transparent"),
+
+        ft.Text("Filter by Period", size=15, color="white70"),
+        filter_row,
+
+        ft.Divider(height=25, color="transparent"),
+
+        ft.Text("Brand-wise Breakdown", size=17, weight="bold", color="white"),
+        ft.Divider(height=6, color="transparent"),
+
+        ft.Container(
+            content=ft.ListView([brand_table], expand=True),
+            border=ft.border.all(1, "#2A3A5A"),
+            border_radius=12,
+            expand=True,
+        ),
+
+    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True)
+
+    refresh("today")
 
     return ft.Container(
         content=content,

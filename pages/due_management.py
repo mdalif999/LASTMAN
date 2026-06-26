@@ -168,8 +168,18 @@ def DueManagementPage(page):
                 paid = r["paid_amount"]
                 
                 # ── Date Filter ──
+                # ── Date Filter ──
                 date_only = get_date_only(str(r["sale_date"] or ""))
-                # ... (আপনার আগের date filter logic গুলো এখানে থাকবে) ...
+
+                if filter_type == "today":
+                    if date_only != now.strftime("%Y-%m-%d"):
+                       continue
+                elif filter_type == "month":
+                   if date_only[:7] != now.strftime("%Y-%m"):
+                      continue
+                elif filter_type == "year":
+                   if date_only[:4] != now.strftime("%Y"):
+                     continue
 
                 # ── Search Filter ──
                 c_name = str(r["customer_name"]).lower()

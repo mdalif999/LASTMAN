@@ -120,7 +120,7 @@ def history_page(page):
 
     def update_list():
         selected = filter_dd.value or "All"
-        try:    logs = get_audit_logs(action_type=selected, limit=100)
+        try:    logs = get_audit_logs(action_type=selected, limit=99999)
         except: logs = []
 
         mobile = is_mobile()
@@ -193,7 +193,7 @@ def history_page(page):
                 
                 product_title = " ".join(display_parts)
                 # বেশি লম্বা হয়ে গেলে স্ক্রিনের সৌন্দর্যের জন্য কেটে ছোট করা
-                product_display = product_title[:40] + "..." if len(product_title) > 40 else product_title
+                product_display = product_title
 
                 # 🌟 ৫. ওল্ড স্টক এবং নিউ স্টক রিডেবল ফরম্যাটে কনভার্ট করা [Old ➔ New]
                 snapshot_str = ""
@@ -249,8 +249,8 @@ def history_page(page):
 
                                 width=155,
                             ),
-                            ft.Text(product_display, size=13, color="white", weight="bold", width=250),
-                            ft.Text(final_details, size=12, color="white70", expand=True),
+                            ft.Text(product_display, size=13, color="white", weight="bold", expand=True),
+                            ft.Text(final_details, size=12, color="white70", width=300),
                         ], spacing=10),
                     ))
             except Exception as ex:

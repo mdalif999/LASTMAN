@@ -222,7 +222,7 @@ def pos_page(page, navigate=None):
     def on_input_change(item, inputs, amount_text):
         try:
             u_type              = item[10] if len(item) > 10 else "alum"
-            unit_size           = float(item[7] or 252.0)
+            unit_size           = float(item[7] or 120.0)
             price_per_full_unit = float(item[9] or 0)  # sell_price directly নাও
             total_stock_inches  = float(item[6] or 0)
             amount              = 0.0
@@ -334,10 +334,7 @@ def pos_page(page, navigate=None):
         columns=[
             ft.DataColumn(ft.Text("SL",          weight=ft.FontWeight.BOLD, color="black")),
             ft.DataColumn(ft.Text("Code",         weight=ft.FontWeight.BOLD, color="black")),
-            ft.DataColumn(ft.Container(
-    content=ft.Text("Profile Name", weight=ft.FontWeight.BOLD, color="black"),
-    width=max(150, min(280, page.width * 0.18)),
-)),
+            ft.DataColumn(ft.Text("Profile Name", weight=ft.FontWeight.BOLD, color="black")),
             ft.DataColumn(ft.Text("Spec",         weight=ft.FontWeight.BOLD, color="black")),
             ft.DataColumn(ft.Text("Color",        weight=ft.FontWeight.BOLD, color="black")),
             ft.DataColumn(ft.Text("Stock",        weight=ft.FontWeight.BOLD, color="black")),
@@ -389,9 +386,8 @@ def pos_page(page, navigate=None):
                     "text_style": ft.TextStyle(weight=ft.FontWeight.BOLD),
                     "dense": False, "color": "blue", "border_color": "black",
                     "content_padding": 5, "text_align": ft.TextAlign.CENTER,
-                    "cursor_height": 30, "input_filter": ft.InputFilter(allow=True, regex_string=r"^\d*\.?\d*$", replacement_string=""),  # ← প্রতিবার নতুন
-}
-                
+                    "cursor_height": 30, "input_filter": num_filter,
+                }
 
                 change_event = (
                     lambda e, i=item, r=row_inputs, a=amount_display:
@@ -420,18 +416,10 @@ def pos_page(page, navigate=None):
             main_table.rows.append(ft.DataRow(cells=[
                 ft.DataCell(ft.Text(str(idx + 1), color="black")),
                 ft.DataCell(ft.Text(str(item[2]), color="black")),
-                ft.DataCell(
-    ft.Container(
-        width=max(150, min(280, page.width * 0.18)),
-        tooltip=f"{str(item[3]).strip()} ({str(item[1]).strip()})",
-        content=ft.Text(
-            f"{str(item[3]).strip()} ({str(item[1]).strip()})",
-            color="black", weight="bold", size=13,
-            overflow=ft.TextOverflow.ELLIPSIS,
-            max_lines=2,
-        ),
-    )
-),
+                ft.DataCell(ft.Text(
+                    f"{str(item[3]).strip()} ({str(item[1]).strip()})",
+                    color="black", weight="bold", size=14
+                )),
                 ft.DataCell(ft.Text(spec_display,                  color="black")),
                 ft.DataCell(ft.Text(str(item[4]),                  color="black")),
                 ft.DataCell(ft.Text(stock_display,                 color="black")),
@@ -666,4 +654,7 @@ def pos_page(page, navigate=None):
             )
         ])
     )
- 
+inventory_raw_data = sorted(
+    get_inventory_items(limit=10000),
+    key=lambda x: str(x[3]).lower()
+)

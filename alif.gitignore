@@ -2,7 +2,7 @@
 .venv/
 venv/
 ENV/
-
+inventory.db
 # Mac এর নিজস্ব হিডেন ফাইল
 .DS_Store
 .AppleDouble

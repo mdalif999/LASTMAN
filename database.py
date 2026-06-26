@@ -1,23 +1,17 @@
-# cat > /mnt/user-data/outputs/database.py << 'PYEOF'
 import sqlite3
 from datetime import datetime
 import os
 import sys
-import sqlite3
 
 if getattr(sys, 'frozen', False):
-    BASE_DIR = os.path.abspath(os.path.join(
-        os.path.dirname(sys.executable),
-        "..", "..", ".."  # MacOS → Contents → main.app → dist
-    ))
+    BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DB = os.path.join(BASE_DIR, "inventory.db")
-INVENTORY_DB = DB
+
 
 def _conn():
-    """সব connection এ timeout=15 দেওয়া — lock problem fix।"""
     return sqlite3.connect(DB, timeout=15)
 
 
@@ -68,7 +62,10 @@ def init_db():
             paid_amount      REAL DEFAULT 0,
             due_amount       REAL DEFAULT 0,
             profit           REAL DEFAULT 0,
-            is_synced        INTEGER DEFAULT 0
+            is_synced        INTEGER DEFAULT 0,
+            brand       TEXT DEFAULT '',
+            unit_in REAL DEFAULT 252,
+            inventory_id     INTEGER DEFAULT 0
         )
     """)
 
@@ -99,6 +96,13 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO brands (name) VALUES ('Altech'), ('Chunghua')")
 
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS colors (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,
             value TEXT
@@ -122,6 +126,15 @@ def init_db():
             INSERT INTO business_profile (owner_name, shop_name, address, phone, logo_path)
             VALUES (?, ?, ?, ?, ?)
         """, ("আলিফ", "আমার দোকান", "ঠিকানা এখানে", "০১৭...", ""))
+
+    # ── deleted_inventory: Supabase delete queue ──────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS deleted_inventory (
+            id          INTEGER PRIMARY KEY,
+            deleted_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+            is_synced   INTEGER DEFAULT 0
+        )
+    """)
 
     _safe_add_columns(cursor, "sales", [
         ("order_id",         "TEXT"),
@@ -155,9 +168,11 @@ def init_db():
         UPDATE inventory SET current_stock = total_in
         WHERE current_stock = 0 AND total_in > 0
     """)
+
     conn.commit()
     conn.close()
     _sync_database_names()
+    _populate_brands_from_inventory()
 
 
 def _safe_add_columns(cursor, table, columns):
@@ -179,6 +194,31 @@ def _sync_database_names():
             conn.commit()
     except Exception as e:
         print(f"Sync warning: {e}")
+    finally:
+        conn.close()
+
+
+def _populate_brands_from_inventory():
+    """inventory table এ যত distinct brand/color আছে সব local tables এ save।"""
+    conn   = _conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT DISTINCT brand FROM inventory WHERE brand IS NOT NULL AND brand != ''")
+        for (b,) in cursor.fetchall():
+            try:
+                cursor.execute("INSERT OR IGNORE INTO brands (name) VALUES (?)", (b,))
+            except Exception:
+                pass
+
+        cursor.execute("SELECT DISTINCT color FROM inventory WHERE color IS NOT NULL AND color != ''")
+        for (c,) in cursor.fetchall():
+            try:
+                cursor.execute("INSERT OR IGNORE INTO colors (name) VALUES (?)", (c,))
+            except Exception:
+                pass
+        conn.commit()
+    except Exception as e:
+        print(f"_populate_brands_from_inventory error: {e}")
     finally:
         conn.close()
 
@@ -215,7 +255,7 @@ def add_new_brand(brand_name):
     conn = _conn()
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO brands (name) VALUES (?)", (brand_name.strip(),))
+        cursor.execute("INSERT OR IGNORE INTO brands (name) VALUES (?)", (brand_name.strip(),))
         conn.commit()
         return True
     except Exception:
@@ -238,7 +278,7 @@ def add_new_color(name):
     conn = sqlite3.connect(DB, timeout=15)
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO colors (name) VALUES (?)", (name,))
+        cursor.execute("INSERT OR IGNORE INTO colors (name) VALUES (?)", (name,))
         conn.commit()
     except sqlite3.IntegrityError:
         pass
@@ -246,16 +286,10 @@ def add_new_color(name):
         conn.close()
 
 
-# ========== AUDIT LOG (একটাই function, সব জায়গায় এটাই ব্যবহার হবে) ==========
+# ========== AUDIT LOG ==========
 def add_audit_log(action_type, product_name, details="", user="Admin",
                   brand="", die_code="", color="",
                   unit_length=120.0, old_stock=0.0, new_stock=0.0):
-    """
-    SINGLE audit log writer।
-    inventory.py এ শুধু Stock Added/Opening Stock এর জন্য এটা call করবে।
-    update_inventory_item() এ Price Changed / Discount Changed এর জন্য।
-    কখনো দুটো জায়গা থেকে একই event এর জন্য call হবে না।
-    """
     conn   = _conn()
     cursor = conn.cursor()
     now    = datetime.now().strftime("%d %b %Y, %I:%M %p")
@@ -275,7 +309,7 @@ def add_audit_log(action_type, product_name, details="", user="Admin",
         conn.close()
 
 
-def get_audit_logs(action_type="All", limit=100):
+def get_audit_logs(action_type="All", limit=99999):
     conn   = _conn()
     cursor = conn.cursor()
     try:
@@ -299,16 +333,16 @@ def get_audit_logs(action_type="All", limit=100):
 
 # ========== INVENTORY ==========
 def add_inventory_item(brand, die_no, name, color, thick,
-                       total_in, unit_in, buy, sell,
+                       total_in, unit_in, buy,
                        unit_type='alum', discount=0.0):
-    """
-    শুধু inventory টেবিলে insert করে।
-    audit log inventory.py এর add_submit() থেকে করা হয় — এখানে নেই।
-    """
     conn   = _conn()
     cursor = conn.cursor()
     if unit_type not in ['alum', 'wool']:
         unit_in = 1.0
+    
+    sell_price = float(buy or 0)
+    buy_price  = round(sell_price * (1 - float(discount or 0) / 100), 2)
+    
     try:
         cursor.execute("""
             INSERT INTO inventory
@@ -317,16 +351,16 @@ def add_inventory_item(brand, die_no, name, color, thick,
                  unit_type, current_stock, is_synced, discount_percent)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
         """, (brand, die_no, name, color, thick,
-              total_in, unit_in, buy, sell,
+              total_in, unit_in, buy_price, sell_price,
               unit_type, total_in, discount))
         conn.commit()
+        _populate_brands_from_inventory()
     except Exception as e:
         print(f"add_inventory_item error: {e}")
     finally:
         conn.close()
 
-
-def get_inventory_items():
+def get_inventory_items(limit=1000, offset=0):
     conn   = _conn()
     cursor = conn.cursor()
     try:
@@ -335,12 +369,13 @@ def get_inventory_items():
                    current_stock, unit_in, buy_price, sell_price,
                    unit_type, discount_percent
             FROM inventory ORDER BY id DESC
-        """)
+            LIMIT ? OFFSET ?
+        """, (limit, offset))
         result = []
         for item in cursor.fetchall():
             row     = list(item)
             row[6]  = float(row[6]  or 0)
-            row[7]  = float(row[7]  or 120)
+            row[7]  = float(row[7]  or 252)
             row[11] = float(row[11] or 0.0)
             result.append(tuple(row))
         return result
@@ -351,16 +386,22 @@ def get_inventory_items():
         conn.close()
 
 
-def update_inventory_item(item_id, brand, die_no, name, color, thick,
-                          buy, sell, total_in=None, discount=0.0):
-    """
-    inventory update করে।
-    Stock change log — এখানে করা হয় না (inventory.py থেকে আসে)।
-    Price / Discount change log — এখানেই হয় (শুধু এখানেই, inventory.py তে নয়)।
-    """
+def get_inventory_total_count():
     conn   = _conn()
     cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT COUNT(*) FROM inventory")
+        return cursor.fetchone()[0] or 0
+    except Exception:
+        return 0
+    finally:
+        conn.close()
 
+
+def update_inventory_item(item_id, brand, die_no, name, color, thick,
+                          buy, total_in=None, discount=0.0):
+    conn   = _conn()
+    cursor = conn.cursor()
     cursor.execute(
         "SELECT buy_price, sell_price, current_stock, discount_percent, unit_in "
         "FROM inventory WHERE id=?", (item_id,)
@@ -370,57 +411,43 @@ def update_inventory_item(item_id, brand, die_no, name, color, thick,
         conn.close()
         return
     old_buy, old_sell, old_stock, old_disc, db_unit_in = row
-    old_stock   = float(old_stock  or 0.0)
-    db_unit_in  = float(db_unit_in or 120.0)
-
+    old_stock  = float(old_stock  or 0.0)
+    db_unit_in = float(db_unit_in or 120.0)
     final_total = total_in if total_in is not None else old_stock
+
+    sell_price = float(buy or 0)
+    buy_price  = round(sell_price * (1 - float(discount or 0) / 100), 2)
 
     cursor.execute("""
         UPDATE inventory
         SET brand=?, die_no=?, name=?, color=?, thick=?,
-            buy_price=?, sell_price=?,
-            total_in=?, current_stock=?,
+            buy_price=?, sell_price=?, total_in=?, current_stock=?,
             discount_percent=?, is_synced=0
         WHERE id=?
     """, (brand, die_no, name, color, thick,
-          buy, sell, final_total, final_total,
-          discount, item_id))
+          buy_price, sell_price, final_total, final_total, discount, item_id))
     conn.commit()
     conn.close()
 
-    # Price change — শুধু এখানে log হয়, inventory.py তে নয়
-    if float(buy) != float(old_buy or 0) or float(sell) != float(old_sell or 0):
+    if float(buy) != float(old_sell or 0):
         add_audit_log(
-            action_type  = "Price Changed",
-            product_name = name,
-            details      = f"Old Buy:{old_buy} New:{buy} | Old Sell:{old_sell} New:{sell}",
-            user         = "Admin",
-            brand        = brand,
-            die_code     = die_no,
-            color        = color,
-            unit_length  = db_unit_in,
-            old_stock    = old_stock,
-            new_stock    = old_stock,
+            action_type="Price Changed", product_name=name,
+            details=f"Old Price: {old_sell} → New Price: {buy}",
+            user="Admin", brand=brand, die_code=die_no, color=color,
+            unit_length=db_unit_in, old_stock=old_stock, new_stock=old_stock,
         )
-
-    # Discount change — শুধু এখানে log হয়
     if float(discount) != float(old_disc or 0.0):
         add_audit_log(
-            action_type  = "Discount Changed",
-            product_name = name,
-            details      = f"Old Discount:{old_disc}% → New:{discount}%",
-            user         = "Admin",
-            brand        = brand,
-            die_code     = die_no,
-            color        = color,
-            unit_length  = db_unit_in,
-            old_stock    = old_stock,
-            new_stock    = old_stock,
+            action_type="Discount Changed", product_name=name,
+            details=f"Old Discount: {old_disc}% → New: {discount}%",
+            user="Admin", brand=brand, die_code=die_no, color=color,
+            unit_length=db_unit_in, old_stock=old_stock, new_stock=old_stock,
         )
-
-
 def delete_inventory_item(item_id):
-    """delete করার আগে log, তারপর delete।"""
+    """
+    Local এ delete করে AND deleted_inventory table এ ID রাখে।
+    main.py এর sync worker এই table দেখে Supabase থেকেও delete করে।
+    """
     conn   = _conn()
     cursor = conn.cursor()
     try:
@@ -429,6 +456,13 @@ def delete_inventory_item(item_id):
             "FROM inventory WHERE id=?", (item_id,)
         )
         item = cursor.fetchone()
+
+        # ── deleted_inventory queue তে রাখো ──
+        cursor.execute(
+            "INSERT OR IGNORE INTO deleted_inventory (id, is_synced) VALUES (?, 0)",
+            (item_id,)
+        )
+
         cursor.execute("DELETE FROM inventory WHERE id=?", (item_id,))
         conn.commit()
     except Exception as e:
@@ -441,17 +475,37 @@ def delete_inventory_item(item_id):
     if item:
         p_name, die_no, brand, clr, last_stk, unit_len = item
         add_audit_log(
-            action_type  = "Stock Removed",
-            product_name = str(p_name),
-            details      = f"Product Code: {die_no} permanently deleted.",
-            user         = "Admin",
-            brand        = str(brand or ""),
-            die_code     = str(die_no or ""),
-            color        = str(clr or ""),
-            unit_length  = float(unit_len or 120.0),
-            old_stock    = float(last_stk or 0.0),
-            new_stock    = 0.0,
+            action_type="Stock Removed", product_name=str(p_name),
+            details=f"Product Code: {die_no} permanently deleted.",
+            user="Admin", brand=str(brand or ""), die_code=str(die_no or ""),
+            color=str(clr or ""), unit_length=float(unit_len or 120.0),
+            old_stock=float(last_stk or 0.0), new_stock=0.0,
         )
+
+
+def get_pending_deletes():
+    """Supabase থেকে delete করার জন্য pending ID গুলো।"""
+    conn   = _conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id FROM deleted_inventory WHERE is_synced=0")
+        return [row[0] for row in cursor.fetchall()]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def mark_delete_synced(item_id):
+    conn   = _conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE deleted_inventory SET is_synced=1 WHERE id=?", (item_id,))
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
 
 
 # ========== SALES ==========
@@ -514,32 +568,47 @@ def process_sale(item_id, sold_qty, total_bill, profile_name,
 def get_dashboard_stats():
     conn   = _conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT current_stock, unit_in, buy_price, unit_type FROM inventory")
-    total_inv = 0.0
-    for cs, ui, bp, ut in cursor.fetchall():
-        s = float(cs or 0); u = float(ui or 120); b = float(bp or 0)
-        total_inv += (s/u)*b if str(ut).strip().lower()=="alum" and u>0 else s*b
-    cursor.execute("SELECT COUNT(*) FROM inventory WHERE current_stock > 0")
-    total_items = cursor.fetchone()[0] or 0
-    today = datetime.now().strftime("%Y-%m-%d")
     try:
-        cursor.execute(
-            "SELECT SUM(total-discount), SUM(profit) FROM sales WHERE sale_date=?", (today,))
-        row = cursor.fetchone()
-        today_sales  = float(row[0] or 0)
-        today_profit = float(row[1] or 0)
-    except Exception:
-        today_sales = today_profit = 0.0
-    try:
-        cursor.execute("SELECT SUM(due_amount) FROM sales WHERE due_amount>0")
-        total_due = float(cursor.fetchone()[0] or 0)
-    except Exception:
-        total_due = 0.0
-    conn.close()
-    return {"investment": round(total_inv,2), "items": total_items,
-            "sales": today_sales, "profit": today_profit, "due": total_due}
+        cursor.execute("SELECT current_stock, unit_in, buy_price, unit_type FROM inventory")
+        total_inv = 0.0
+        for cs, ui, bp, ut in cursor.fetchall():
+            s = float(cs or 0); u = float(ui or 120); b = float(bp or 0)
+            total_inv += (s/u)*b if str(ut).strip().lower()=="alum" and u>0 else s*b
 
+        cursor.execute("SELECT COUNT(*) FROM inventory WHERE current_stock > 0")
+        total_items = cursor.fetchone()[0] or 0
 
+        today = datetime.now().strftime("%Y-%m-%d")
+        try:
+            cursor.execute(
+                "SELECT SUM(total-discount), SUM(profit) FROM sales WHERE sale_date=?", (today,))
+            row = cursor.fetchone()
+            today_sales  = float(row[0] or 0)
+            today_profit = float(row[1] or 0)
+        except Exception:
+            today_sales = today_profit = 0.0
+
+        try:
+            cursor.execute("""
+                SELECT SUM(due_amount) FROM (
+                    SELECT MAX(due_amount) as due_amount 
+                    FROM sales 
+                    WHERE due_amount > 0.05
+                    GROUP BY order_id
+                )
+            """)
+            total_due = float(cursor.fetchone()[0] or 0)
+        except Exception:
+            total_due = 0.0
+
+        return {"investment": round(total_inv, 2), "items": total_items,
+                "sales": today_sales, "profit": today_profit, "due": total_due}
+
+    except Exception as e:
+        print(f"get_dashboard_stats error: {e}")
+        return {"investment": 0, "items": 0, "sales": 0, "profit": 0, "due": 0}
+    finally:
+        conn.close()
 def get_recent_sales(limit=5):
     conn   = _conn()
     cursor = conn.cursor()
@@ -646,13 +715,21 @@ def collect_due_payment(sale_id, payment_amount):
     conn   = _conn()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT paid_amount, due_amount FROM sales WHERE id=?", (sale_id,))
+        # আগে order_id বের করো
+        cursor.execute("SELECT order_id, paid_amount, due_amount FROM sales WHERE id=?", (sale_id,))
         row = cursor.fetchone()
         if row:
-            cursor.execute(
-                "UPDATE sales SET paid_amount=?, due_amount=?, is_synced=0 WHERE id=?",
-                (float(row[0] or 0)+float(payment_amount),
-                 float(row[1] or 0)-float(payment_amount), sale_id))
+            order_id   = row[0]
+            new_paid   = float(row[1] or 0) + float(payment_amount)
+            new_due    = float(row[2] or 0) - float(payment_amount)
+            if new_due < 0: new_due = 0.0
+
+            # ওই order_id এর সব rows update করো
+            cursor.execute("""
+                UPDATE sales 
+                SET paid_amount=?, due_amount=?, is_synced=0 
+                WHERE order_id=?
+            """, (new_paid, new_due, order_id))
             conn.commit()
     except Exception as e:
         print(f"collect_due_payment error: {e}")
@@ -707,14 +784,24 @@ def get_invoice_items(order_id):
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     try:
+        
         cursor.execute("""
-            SELECT s.id, s.order_id, s.profile_name, s.die_no,
-                   s.color, s.spec, s.quantity,
-                   s.price, s.total, s.discount,
-                   i.unit_in, i.unit_type, i.brand
-            FROM sales s
-            LEFT JOIN inventory i ON s.die_no=i.die_no
-            WHERE s.order_id=? ORDER BY s.id ASC
+    SELECT 
+        s.id, s.order_id, s.profile_name, s.die_no,
+        s.color, s.spec, s.quantity,
+        s.price, s.total, s.discount,
+        s.customer_name, s.customer_phone,
+        s.paid_amount, s.due_amount,
+        s.brand,
+        COALESCE(i.unit_in, 120) as unit_in,
+        COALESCE(i.unit_type, 'alum') as unit_type
+    FROM sales s
+    LEFT JOIN (
+        SELECT die_no, color, unit_in, unit_type
+        FROM inventory
+        GROUP BY die_no, color
+    ) i ON s.die_no = i.die_no AND s.color = i.color
+    WHERE s.order_id=? ORDER BY s.id ASC
         """, (str(order_id),))
         return cursor.fetchall()
     except Exception as e:
@@ -761,6 +848,36 @@ def get_profit_sum(filter_type="today"):
     return (result[0] if result and result[0] else 0.0,
             result[1] if result and result[1] else 0.0)
 
+def get_brand_profit_summary(filter_type="today"):
+    conn   = _conn()
+    cursor = conn.cursor()
+
+    date_filter = ""
+    if filter_type == "today":
+        date_filter = "WHERE DATE(s.sale_date)=DATE('now')"
+    elif filter_type == "month":
+        date_filter = "WHERE strftime('%m',s.sale_date)=strftime('%m','now') AND strftime('%Y',s.sale_date)=strftime('%Y','now')"
+    elif filter_type == "year":
+        date_filter = "WHERE strftime('%Y',s.sale_date)=strftime('%Y','now')"
+
+    cursor.execute(f"""
+    SELECT 
+        s.brand,
+        SUM(s.total)              AS gross,
+        SUM(s.total - s.discount) AS net,
+        SUM(s.discount)           AS total_discount,
+        SUM(s.profit)             AS profit
+    FROM sales s
+    {date_filter}
+    GROUP BY s.brand
+    HAVING s.brand != ''
+    ORDER BY profit DESC
+""")
+
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
 
 def get_product_unit_in(product_name):
     conn   = _conn()
@@ -791,5 +908,3 @@ def get_product_unit_in(product_name):
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully!")
-# PYEOF
-# echo "Done"
