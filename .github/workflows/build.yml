@@ -24,14 +24,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flet reportlab supabase
+          pip install --upgrade flet reportlab supabase
 
       - name: Build Windows Executable
         env:
           PYTHONIOENCODING: "utf-8"
         run: |
           chcp 65001
-          flet build windows --no-interactive --verbose
+          flet build windows --verbose
           
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
