@@ -1,41 +1,32 @@
-name: Build Flet MacOS App
-
-on:
+name: Build Windows App
+on: 
   push:
     branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
-
+  build:
+    runs-on: windows-latest
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-        pip install flet
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flet
 
-    - name: Build macOS App
-      run: |
-        flet build macos
+      - name: Build Windows Executable
+        run: |
+          flet build windows --verbose
 
-    - name: Clean Unnecessary Heavy Files
-      run: |
-        # বিল্ড সাইজ ছোট করার জন্য ডাব্লিউইবি এবং ডিবাগিং কম্পোনেন্ট ট্রিম করা
-        rm -rf build/macos/web || true
-        rm -rf build/macos/ios || true
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: flet-macos-app
-        path: build/macos/
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TAREKApp
+          path: build/windows
