@@ -19,14 +19,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flet reportlab supabase
+          pip install --no-cache-dir flet>=0.23.0 reportlab supabase
+          # এখানে আমরা জোর করে একদম লেটেস্ট বাগ-মুক্ত ফ্লেট ইনস্টল করাচ্ছি
 
       - name: Build Windows Executable
         env:
           PYTHONIOENCODING: "utf-8"
+        shell: powershell
         run: |
           chcp 65001
-          flet build windows --verbose
+          # যদি সে কোনো প্রশ্ন করে, এই লাইনটি অটোমেটিক 'y' ইনপুট দিয়ে দেবে
+          echo "y" | flet build windows --verbose
           
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
