@@ -1,38 +1,51 @@
 name: Build Windows App
-on: 
+
+on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --no-cache-dir flet>=0.23.0 reportlab supabase
-          # এখানে আমরা জোর করে একদম লেটেস্ট বাগ-মুক্ত ফ্লেট ইনস্টল করাচ্ছি
+      # Install Flutter first (prevents interactive download prompt)
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.41.7"
+          cache: true
 
-      - name: Build Windows Executable
-        env:
-          PYTHONIOENCODING: "utf-8"
+      - name: Verify Flutter
+        run: flutter doctor -v
+
+      - name: Install Python Dependencies
         shell: powershell
         run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir "flet>=0.23.0" reportlab supabase
+
+      - name: Build Windows Executable
+        shell: powershell
+        env:
+          PYTHONIOENCODING: utf-8
+        run: |
           chcp 65001
-          # যদি সে কোনো প্রশ্ন করে, এই লাইনটি অটোমেটিক 'y' ইনপুট দিয়ে দেবে
-          echo "y" | flet build windows --verbose
-          
-      - name: Upload Build Artifact
+          flet build windows --verbose
+
+      - name: Upload Windows Build
         uses: actions/upload-artifact@v4
         with:
-          name: cityglass-Windows-App
+          name: CITYGLASS-App
           path: build/windows
+          if-no-files-found: error
