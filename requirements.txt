@@ -46,7 +46,7 @@ pydantic==2.13.3
 pydantic_core==2.46.3
 Pygments==2.20.0
 pyiceberg==0.10.0
-pyinstaller==6.20.0
+# pyinstaller==6.20.0
 pyinstaller-hooks-contrib==2026.5
 PyJWT==2.12.1
 pyparsing==3.3.2
@@ -79,7 +79,7 @@ typing_extensions==4.15.0
 tzdata==2026.2
 urllib3==2.6.3
 uvicorn==0.39.0
-uvloop==0.22.1
+# uvloop==0.22.1
 watchdog==4.0.2
 watchfiles==1.1.1
 websockets==15.0.1
