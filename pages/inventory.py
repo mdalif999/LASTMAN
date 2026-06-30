@@ -2,7 +2,7 @@ import flet as ft
 from database import (
     add_inventory_item, get_inventory_items, get_inventory_total_count,
     get_brands, add_new_brand, update_inventory_item, delete_inventory_item,
-    get_colors, add_new_color, add_audit_log,
+    get_colors, add_new_color, add_audit_log, DB,
 )
 
 PAGE_SIZE = 50  # একবারে কতটা load হবে
@@ -13,7 +13,7 @@ def inventory_page(page):
     current_offset = [0]   # pagination offset
     total_count    = [0]   # মোট item count
 
-    inventory_list = ft.Column(spacing=0, scroll="auto", expand=True)
+    inventory_list = ft.Column(spacing=0, scroll="auto")
 
     def is_mobile():
         try:    return (page.width or 800) < 700
@@ -140,8 +140,8 @@ def inventory_page(page):
         if m.supabase:
             result = m.supabase.table("inventory").select("*").execute()
             rows = result.data or []
-            import sqlite3, os
-            conn = sqlite3.connect(os.path.join(os.path.dirname(__file__), '..', 'inventory.db'))
+            import sqlite3
+            conn = sqlite3.connect(DB)
             cur = conn.cursor()
 
             # ✅ Supabase থেকে আসা সব ID
@@ -204,6 +204,11 @@ def inventory_page(page):
        
 
         mobile   = is_mobile()
+        if mobile:
+            inventory_list.width = None
+        else:
+            inventory_list.width = 1120
+
         b_filter = brand_filter_dd.value or "All"
         s_filter = (search_tf.value or "").lower().strip()
 
@@ -241,10 +246,10 @@ def inventory_page(page):
                 content=ft.Row([
                     ft.Text("SL",                   width=38,  weight="bold", color="black", size=13),
                     ft.Text("Code",                 width=85,  weight="bold", color="black", size=13),
-                    ft.Text("Product Name (Brand)", width=240, weight="bold", color="black", size=13),
+                    ft.Text("Product Name (Brand)", width=300, weight="bold", color="black", size=13),
                     ft.Text("Spec",                 width=130, weight="bold", color="black", size=13),
                     ft.Text("Color",                width=90,  weight="bold", color="black", size=13),
-                    ft.Text("Stock",                width=175, weight="bold", color="black", size=13),
+                    ft.Text("Stock",                width=115, weight="bold", color="black", size=13),
                     ft.Text("Price",                width=90,  weight="bold", color="black", size=13),
                     ft.Text("Disc%",                width=65,  weight="bold", color="red",   size=13),
                     ft.Text("Action",               width=90,  weight="bold", color="black", size=13),
@@ -431,11 +436,11 @@ def inventory_page(page):
                         content=ft.Row([
                             ft.Text(str(idx),                  width=38,  color="black",  size=13),
                             ft.Text(str(item[2] or ""),        width=85,  color="black",  size=13),
-                            ft.Text(f"{item[3]}  ({item[1]})", width=240, color="black",
+                            ft.Text(f"{item[3]}  ({item[1]})", width=300, color="black",
                                     weight="bold", size=14),
                             ft.Text(spec_display,               width=130, color="black",  size=13),
                             ft.Text(str(item[4] or ""),         width=90,  color="black",  size=13),
-                            ft.Text(stock_str,                  width=175, color=s_color,
+                            ft.Text(stock_str,                  width=115, color=s_color,
                                     weight="bold", size=13),
                             ft.Text(f"{buy_price:,.0f}",        width=90,  color="black",  size=13),
                             ft.Text(f"{disc_pct}%",             width=65,  color="red",    size=13),
@@ -555,7 +560,7 @@ def inventory_page(page):
                             ft.Text(str(idx),           size=13, color="black", width=38),
                             ft.Text(str(item[2] or ""), size=13, color="black", width=85),
                             ft.Text(str(item[3] or ""), size=14, color="black",
-                                    weight="bold", width=210),
+                                    weight="bold", width=270),
                             qty_box,
                             buy_f, disc_f,
                             ft.Row([
@@ -743,8 +748,8 @@ def inventory_page(page):
                 ft.ElevatedButton("Add New", icon=ft.Icons.ADD,
                                   on_click=lambda _: page.open(add_dlg),
                                   bgcolor="black", color="white"),
-            ], spacing=10),
-        ], alignment="spaceBetween")
+            ], spacing=10, wrap=True),
+        ], alignment="spaceBetween", wrap=True, width=1120)
 
     return ft.Container(
         bgcolor="white", padding=12, expand=True,
@@ -752,7 +757,13 @@ def inventory_page(page):
             build_top_bar(),
             ft.Divider(height=8, color="black12"),
             ft.Container(
-                content=inventory_list, expand=True,
+                content=ft.Row(
+                    [inventory_list],
+                    scroll=ft.ScrollMode.AUTO,
+                    expand=True,
+                    vertical_alignment=ft.CrossAxisAlignment.STRETCH,
+                ),
+                expand=True,
                 border=ft.border.all(1, "black12"), border_radius=8,
                 padding=ft.Padding(left=0, right=0, top=0, bottom=8),
             ),

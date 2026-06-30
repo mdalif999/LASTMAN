@@ -4,6 +4,7 @@ import sqlite3
 import os
 import platform
 import subprocess
+from database import DB
 
 
 # ============================================================
@@ -204,7 +205,7 @@ def save_pdf_invoice(order_no, customer_name, cart_items, totals, extra_info):
 # ORDER NO
 # ============================================================
 def get_billing_data():
-    conn   = sqlite3.connect("inventory.db")
+    conn   = sqlite3.connect(DB)
     cursor = conn.cursor()
     shop_info = {
         "shop_name":    "CITY GLASS ART & THY ALUMINIUM",
@@ -343,7 +344,7 @@ def billing_page(page, cart_items=None, totals=None):
 
     def confirm_sell_to_db():
         try:
-            conn   = sqlite3.connect("inventory.db")
+            conn   = sqlite3.connect(DB)
             cursor = conn.cursor()
             now           = datetime.datetime.now()
             sale_date     = now.strftime("%Y-%m-%d")
@@ -443,8 +444,8 @@ def billing_page(page, cart_items=None, totals=None):
                             customer_name, customer_phone, customer_address,
                             die_no, profile_name, spec, color,
                             quantity, price, total,
-                            discount, paid_amount, due_amount, profit, is_synced,brand,unit_in, inventory_id
-                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)
+                            discount, paid_amount, due_amount, profit,brand,unit_in, inventory_id
+                        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (
                         str(order_no), sale_date, sale_time,
                         c_name.value or "Cash", c_phone.value or "",
@@ -597,39 +598,41 @@ def billing_page(page, cart_items=None, totals=None):
         ),
 
         # ── Items table ───────────────────────────────────────
-        ft.DataTable(
-            border=ft.border.all(1.5, "black"),
-            heading_row_color="#f0f0f0",
-            horizontal_lines=ft.BorderSide(1, "black"),
-            vertical_lines=ft.BorderSide(0.5, "black26"),
-            column_spacing=14,
-            columns=[
-                ft.DataColumn(ft.Text("SN",           color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Die No",       color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Profile Name", color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Brand",        color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Spec",         color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Color",        color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Qty",          color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Price",        color="black", weight="bold")),
-                ft.DataColumn(ft.Text("Total",        color="black", weight="bold")),
-            ],
-            rows=[
-                ft.DataRow(cells=[
-                    ft.DataCell(ft.Text(str(i + 1),                            color="black")),
-                    ft.DataCell(ft.Text(str(item.get("die_no",  "")),          color="black")),
-                    ft.DataCell(ft.Text(str(item.get("profile", "")),          color="black")),
-                    ft.DataCell(ft.Text(str(item.get("brand",   "")),          color="black")),
-                    ft.DataCell(ft.Text(str(item.get("spec",    "")),          color="black")),
-                    ft.DataCell(ft.Text(str(item.get("color",   "")),          color="black")),
-                    ft.DataCell(ft.Text(str(item.get("qty",     "0")),         color="black")),
-                    ft.DataCell(ft.Text(f"{float(item.get('price',0)):,.2f}", color="black")),
-                    ft.DataCell(ft.Text(f"{float(item.get('total',0)):,.2f}", color="black", weight="bold")),
-                ])
-                for i, item in enumerate(cart_items or [])
-            ],
-            width=1100,
-        ),
+        ft.Row([
+            ft.DataTable(
+                border=ft.border.all(1.5, "black"),
+                heading_row_color="#f0f0f0",
+                horizontal_lines=ft.BorderSide(1, "black"),
+                vertical_lines=ft.BorderSide(0.5, "black26"),
+                column_spacing=14,
+                columns=[
+                    ft.DataColumn(ft.Text("SN",           color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Die No",       color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Profile Name", color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Brand",        color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Spec",         color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Color",        color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Qty",          color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Price",        color="black", weight="bold")),
+                    ft.DataColumn(ft.Text("Total",        color="black", weight="bold")),
+                ],
+                rows=[
+                    ft.DataRow(cells=[
+                        ft.DataCell(ft.Text(str(i + 1),                            color="black")),
+                        ft.DataCell(ft.Text(str(item.get("die_no",  "")),          color="black")),
+                        ft.DataCell(ft.Text(str(item.get("profile", "")),          color="black")),
+                        ft.DataCell(ft.Text(str(item.get("brand",   "")),          color="black")),
+                        ft.DataCell(ft.Text(str(item.get("spec",    "")),          color="black")),
+                        ft.DataCell(ft.Text(str(item.get("color",   "")),          color="black")),
+                        ft.DataCell(ft.Text(str(item.get("qty",     "0")),         color="black")),
+                        ft.DataCell(ft.Text(f"{float(item.get('price',0)):,.2f}", color="black")),
+                        ft.DataCell(ft.Text(f"{float(item.get('total',0)):,.2f}", color="black", weight="bold")),
+                    ])
+                    for i, item in enumerate(cart_items or [])
+                ],
+                width=1100,
+            )
+        ], scroll=ft.ScrollMode.AUTO),
 
         ft.Container(height=12),
 
@@ -666,8 +669,6 @@ def billing_page(page, cart_items=None, totals=None):
                 width=460,
             ),
 
-            ft.Container(expand=True),
-
             ft.Column([
                 ft.Row([
                     ft.Text("Gross Total :", size=16, color="black"),
@@ -688,7 +689,7 @@ def billing_page(page, cart_items=None, totals=None):
                     disp_paid_text,
                 ], alignment="end", spacing=25),
             ], horizontal_alignment="end", spacing=8),
-        ], alignment="spaceBetween", vertical_alignment="start"),
+        ], alignment="spaceBetween", vertical_alignment="start", wrap=True),
 
         ft.Container(height=20),
 
@@ -736,9 +737,9 @@ def billing_page(page, cart_items=None, totals=None):
                 bgcolor="white", padding=40,
                 border=ft.border.all(1, "black12"),
                 margin=ft.Margin(left=10, right=10, top=10, bottom=10),
-                alignment=ft.alignment.top_center,
+                width=min(1200, (page.width or 1200) - 40),
             ),
-        ], scroll=ft.ScrollMode.AUTO),
+        ], scroll=ft.ScrollMode.AUTO, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
     )
 
 

@@ -224,7 +224,7 @@ def _populate_brands_from_inventory():
 
 
 # ========== SETTINGS ==========
-def init_settings_db(): init_db()
+
 
 def get_app_password():
     conn = _conn()
@@ -904,7 +904,33 @@ def get_product_unit_in(product_name):
     finally:
         conn.close()
 
+def get_recent_grouped_sales(limit=5):
+    """Dashboard এর জন্য invoice-level summary।"""
+    conn = _conn()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT order_id, sale_date, sale_time,
+                   customer_name, customer_phone,
+                   SUM(total)          AS gross,
+                   SUM(discount)       AS discount,
+                   SUM(total-discount) AS net,
+                   MAX(paid_amount)    AS paid_amount,
+                   MAX(due_amount)     AS due_amount
+            FROM sales
+            GROUP BY order_id
+            ORDER BY MAX(id) DESC
+            LIMIT ?
+        """, (limit,))
+        return [dict(r) for r in cursor.fetchall()]
+    except Exception as e:
+        print(f"get_recent_grouped_sales error: {e}")
+        return []
+    finally:
+        conn.close()
 
 if __name__ == "__main__":
     init_db()
     print("Database initialized successfully!")
+

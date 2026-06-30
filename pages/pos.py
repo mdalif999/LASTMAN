@@ -331,6 +331,7 @@ def pos_page(page, navigate=None):
         column_spacing=12,
         data_row_min_height=65,
         data_row_max_height=70,
+        width=max(1100, (page.width or 1100) - 310),
         columns=[
             ft.DataColumn(ft.Text("SL",          weight=ft.FontWeight.BOLD, color="black")),
             ft.DataColumn(ft.Text("Code",         weight=ft.FontWeight.BOLD, color="black")),
@@ -344,7 +345,7 @@ def pos_page(page, navigate=None):
             ft.DataColumn(ft.Text("Price",        weight=ft.FontWeight.BOLD, color="black")),
             ft.DataColumn(ft.Container(
                 content=ft.Text("QTY (P/F/I)", weight=ft.FontWeight.BOLD, color="orange"),
-                width=180
+                width=210
             )),
             ft.DataColumn(ft.Text("Amount", weight=ft.FontWeight.BOLD, color="black")),
         ]
@@ -529,13 +530,13 @@ def pos_page(page, navigate=None):
                 ft.Text("VIEW CART SUMMARY", size=24, weight=ft.FontWeight.BOLD, color="black")
             ]),
             content=ft.Container(
-                width=1200, height=520, bgcolor="white",
+                width=min(1200, (page.width or 1200) * 0.9), height=520, bgcolor="white",
                 content=ft.Column([
                     ft.Container(
                         expand=True,
                         border=ft.border.all(1, "black12"),
                         border_radius=10, bgcolor="white", padding=10,
-                        content=ft.ListView([ft.DataTable(
+                        content=ft.ListView([ft.Row([ft.DataTable(
                             bgcolor="white",
                             border=ft.border.all(1, "black12"),
                             horizontal_lines=ft.BorderSide(1, "black12"),
@@ -543,6 +544,7 @@ def pos_page(page, navigate=None):
                             heading_row_color="#f5f5f5",
                             column_spacing=25,
                             data_row_min_height=55, data_row_max_height=60,
+                            width=min(1200, (page.width or 1200) * 0.9) - 25,
                             columns=[
                                 ft.DataColumn(ft.Text("SL",            weight="bold", color="black")),
                                 ft.DataColumn(ft.Text("Product Code",  weight="bold", color="black")),
@@ -554,24 +556,16 @@ def pos_page(page, navigate=None):
                                 ft.DataColumn(ft.Text("Amount",        weight="bold", color="black")),
                             ],
                             rows=cart_rows
-                        )])
+                        )], scroll=ft.ScrollMode.ALWAYS, alignment="center")]),
                     ),
                     ft.Divider(height=20, color="black12"),
                     ft.Row([
-                        ft.Column([
-                            ft.Text(f"Total Items: {len(selected_items)}", size=18, weight=ft.FontWeight.BOLD, color="black"),
-                        ]),
-                        ft.Column([
-                            ft.Row([
-                                ft.Text("SUB TOTAL:",   size=16, weight=ft.FontWeight.BOLD, color="black"),
-                                ft.Text(f"{sub_total:,.2f} TK", size=16, weight=ft.FontWeight.BOLD, color="black")
-                            ], alignment="spaceBetween", width=420),
-                            ft.Row([
-                                ft.Text("GRAND TOTAL:", size=19, weight=ft.FontWeight.BOLD, color="black"),
-                                ft.Text(f"{grand_total:,.2f} TK", size=19, weight=ft.FontWeight.BOLD, color="orange")
-                            ], alignment="spaceBetween", width=420),
-                        ])
-                    ], alignment="spaceBetween")
+                        ft.Text(f"Total Items: {len(selected_items)}", size=18, weight=ft.FontWeight.BOLD, color="black"),
+                        ft.Row([
+                            ft.Text("GRAND TOTAL:", size=19, weight=ft.FontWeight.BOLD, color="black"),
+                            ft.Text(f"{grand_total:,.2f} TK", size=19, weight=ft.FontWeight.BOLD, color="orange")
+                        ], spacing=10, vertical_alignment="center")
+                    ], alignment="spaceBetween", vertical_alignment="center", wrap=True)
                 ])
             ),
             actions=[
@@ -618,7 +612,12 @@ def pos_page(page, navigate=None):
             # ✅ Table with scroll event for infinite scroll
             ft.Container(
                 content=ft.ListView(
-                    [main_table],
+                    [
+                        ft.Row(
+                            [main_table],
+                            scroll=ft.ScrollMode.AUTO,
+                        )
+                    ],
                     expand=True,
                     on_scroll=on_scroll,        # ← এখানেই infinite scroll কাজ করে
                     on_scroll_interval=200,
@@ -636,17 +635,11 @@ def pos_page(page, navigate=None):
                 content=ft.Column([
                     ft.Row([
                         qty_summary,
-                        ft.Column([
-                            ft.Row([
-                                ft.Text("SUB TOTAL:",   weight=ft.FontWeight.W_900, size=15, color="black"),
-                                sub_total_text
-                            ], alignment="spaceBetween", width=430),
-                            ft.Row([
-                                ft.Text("GRAND TOTAL:", weight=ft.FontWeight.W_900, size=19, color="black"),
-                                total_text
-                            ], alignment="spaceBetween", width=430),
-                        ], horizontal_alignment="end")
-                    ], alignment="spaceBetween"),
+                        ft.Row([
+                            ft.Text("GRAND TOTAL:", weight=ft.FontWeight.W_900, size=20, color="black"),
+                            total_text
+                        ], spacing=10, vertical_alignment="center")
+                    ], alignment="spaceBetween", vertical_alignment="center", wrap=True),
 
                     ft.Divider(height=20, color="black12"),
 
@@ -660,7 +653,7 @@ def pos_page(page, navigate=None):
                                 on_click=clear_all
                             ),
                             generate_bill_btn,
-                        ], spacing=30)
+                        ], spacing=30, wrap=True)
                     ], alignment="end")
                 ])
             )

@@ -2,9 +2,10 @@ import flet as ft
 import sqlite3
 import os
 import base64
+from database import DB, update_app_password
 
 # ডাটাবেজ পাথ
-DB_PATH = "inventory.db"
+DB_PATH = DB
 
 def settings_view(page):
     # ডাটাবেজ থেকে ডাটা আনা
@@ -172,14 +173,7 @@ def settings_view(page):
             APP_PASSWORD = pwd_val
             page.client_storage.set("app_pin", pwd_val)
             
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("UPDATE business_profile SET password=? WHERE id=1", (pwd_val,))
-            conn.commit()
-            conn.close()
-            
-            if 'update_app_password' in globals():
-                globals()['update_app_password'](pwd_val)
+            update_app_password(pwd_val)
             
             # ৪. ইনপুট ফিল্ড খালি করা
             new_password_field.value = ""

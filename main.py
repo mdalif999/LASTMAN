@@ -6,6 +6,9 @@ venv_path = os.path.join(os.path.dirname(__file__), '.venv', 'Lib', 'site-packag
 if os.path.exists(venv_path):
     sys.path.append(venv_path)
 
+import socket
+
+
 import flet as ft
 import datetime
 import threading
@@ -21,7 +24,7 @@ def get_path(filename):
     return os.path.join(os.path.abspath("."), filename)
 
 from database import (
-    init_db, get_inventory_items, get_dashboard_stats,
+    init_db,get_recent_grouped_sales, get_inventory_items, get_dashboard_stats,
     get_recent_sales, get_app_password,
     update_app_password, DB,
 )
@@ -280,7 +283,7 @@ def sync_sales():
         cursor.execute("""
             SELECT id, order_id, sale_date, sale_time, customer_name, customer_phone,
                    customer_address, profile_name, color, spec, die_no,
-                   quantity, price, total, discount, paid_amount, due_amount, profit, brand
+                   quantity, price, total, discount, paid_amount, due_amount, profit, brand,inventory_id
             FROM sales WHERE is_synced = 0
         """)
         rows = cursor.fetchall()
@@ -294,6 +297,7 @@ def sync_sales():
                 "profile_name": row[7], "color": row[8], "spec": row[9], "die_no": row[10],
                 "quantity": row[11], "price": row[12], "total": row[13], "discount": row[14],
                 "paid_amount": row[15], "due_amount": row[16], "profit": row[17],"brand": row[18] or "",
+                 "inventory_id": row[19] or 0,
             }
             try:
                 try:
@@ -437,6 +441,13 @@ def pull_audit_logs_from_supabase():
     except Exception as e:
         print(f"pull_audit_logs error: {e}")
 
+        
+def has_internet():
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=2)
+        return True
+    except OSError:
+        return False
 
 def start_sync_worker(interval_seconds=5):
     print(f"Sync worker started. Interval: {interval_seconds}s")
@@ -445,6 +456,11 @@ def start_sync_worker(interval_seconds=5):
     reset_sync_if_needed()
     while True:
         try:
+            # ✅ net না থাকলে কিছুই করবে না
+            if not has_internet():
+                time.sleep(interval_seconds)
+                continue
+
             # প্রতি loop এ check — net না থাকলে আগে pull হয়নি
             conn = get_local_db()
             c = conn.cursor()
@@ -462,7 +478,6 @@ def start_sync_worker(interval_seconds=5):
             print(f"Sync worker error: {e}")
         time.sleep(interval_seconds)
 
-
 # ════════════════════════════════════════════════════════════════
 #  REPORTS
 # ════════════════════════════════════════════════════════════════
@@ -472,7 +487,7 @@ from reportlab.pdfgen import canvas
 from pages.billing_page import billing_page
 from database import (
     init_db, get_inventory_items, get_dashboard_stats,
-    get_recent_sales, init_settings_db, get_app_password, update_app_password,
+    get_recent_sales, get_app_password, update_app_password,
 )
 from pages.inventory import inventory_page
 from pages.pos import pos_page
@@ -595,9 +610,8 @@ def main(page: ft.Page):
     # ════════════════════════════════════════════════════════
     def _build_dashboard():
         try:
-            
             stats             = get_dashboard_stats()
-            recent_sales_data = get_recent_sales(5)
+            recent_sales_data = get_recent_grouped_sales(5)
             items             = get_inventory_items(99999)
         except Exception as e:
             print(f"Dashboard load error: {e}")
@@ -620,13 +634,20 @@ def main(page: ft.Page):
         sale_rows = []
         for s in recent_sales_data:
             try:
-                name  = str(s[0] or "—")[:20]
-                total = float(s[2] or 0)
-                time_ = str(s[4] or s[3] or "—")
+                order_id = str(s.get("order_id") or "—")
+                cust     = str(s.get("customer_name") or "Cash")[:15]
+                net      = float(s.get("net", 0) or 0)
+                paid     = float(s.get("paid_amount", 0) or 0)
+                due      = float(s.get("due_amount", 0) or 0)
+                time_    = str(s.get("sale_time") or "—")
+
                 sale_rows.append(
                     ft.DataRow(cells=[
-                        ft.DataCell(ft.Text(name)),
-                        ft.DataCell(ft.Text(f"{total:,.0f}")),
+                        ft.DataCell(ft.Text(order_id, color="cyan200", weight="bold")),
+                        ft.DataCell(ft.Text(cust)),
+                        ft.DataCell(ft.Text(f"{net:,.0f}")),
+                        ft.DataCell(ft.Text(f"{paid:,.0f}", color="green")),
+                        ft.DataCell(ft.Text(f"{due:,.0f}", color="red" if due>0 else "green")),
                         ft.DataCell(ft.Text(time_)),
                     ])
                 )
@@ -681,8 +702,11 @@ def main(page: ft.Page):
                             ft.Divider(color="white10"),
                             ft.DataTable(
                                 columns=[
-                                    ft.DataColumn(ft.Text("Item")),
-                                    ft.DataColumn(ft.Text("Total Bill")),
+                                    ft.DataColumn(ft.Text("Invoice")),
+                                    ft.DataColumn(ft.Text("Customer")),
+                                    ft.DataColumn(ft.Text("Net")),
+                                    ft.DataColumn(ft.Text("Paid")),
+                                    ft.DataColumn(ft.Text("Due")),
                                     ft.DataColumn(ft.Text("Time")),
                                 ],
                                 rows=sale_rows if sale_rows else [
@@ -763,26 +787,28 @@ def main(page: ft.Page):
                 padding=ft.Padding(top=40, bottom=20, left=0, right=0),
             ),
             ft.Divider(height=1, color="white10"),
-            sidebar_btn(ft.Icons.DASHBOARD,     "Dashboard",  "dashboard"),
-            sidebar_btn(ft.Icons.INVENTORY,     "Inventory",  "inventory"),
-            sidebar_btn(ft.Icons.SHOPPING_CART, "Sales (POS)","sales"),
-            ft.ExpansionTile(
-                title=ft.Text("Reports", size=18, weight="bold", color="white"),
-                leading=ft.Icon(ft.Icons.INSERT_CHART, color="white"),
-                collapsed_icon_color="white",
-                icon_color="orange",
-                controls=[
-                    ft.ListTile(title=ft.Text("Sales Report"),
-                                leading=ft.Icon(ft.Icons.POINT_OF_SALE, size=20),
-                                on_click=lambda _: navigate("sales_report")),
-                    ft.ListTile(title=ft.Text("Stock Report"),
-                                leading=ft.Icon(ft.Icons.INVENTORY_2, size=20),
-                                on_click=lambda _: navigate("stock_report")),
-                ],
-            ),
-            sidebar_btn(ft.Icons.HISTORY,  "History",  "history"),
-            sidebar_btn(ft.Icons.SETTINGS, "Settings", "settings"),
-            ft.Container(expand=True),
+            ft.Column([
+                sidebar_btn(ft.Icons.DASHBOARD,     "Dashboard",  "dashboard"),
+                sidebar_btn(ft.Icons.INVENTORY,     "Inventory",  "inventory"),
+                sidebar_btn(ft.Icons.SHOPPING_CART, "Sales (POS)","sales"),
+                ft.ExpansionTile(
+                    title=ft.Text("Reports", size=18, weight="bold", color="white"),
+                    leading=ft.Icon(ft.Icons.INSERT_CHART, color="white"),
+                    collapsed_icon_color="white",
+                    icon_color="orange",
+                    controls=[
+                        ft.ListTile(title=ft.Text("Sales Report"),
+                                    leading=ft.Icon(ft.Icons.POINT_OF_SALE, size=20),
+                                    on_click=lambda _: navigate("sales_report")),
+                        ft.ListTile(title=ft.Text("Stock Report"),
+                                    leading=ft.Icon(ft.Icons.INVENTORY_2, size=20),
+                                    on_click=lambda _: navigate("stock_report")),
+                    ],
+                ),
+                sidebar_btn(ft.Icons.HISTORY,  "History",  "history"),
+                sidebar_btn(ft.Icons.SETTINGS, "Settings", "settings"),
+            ], scroll=ft.ScrollMode.AUTO, expand=True, spacing=5),
+            ft.Divider(height=1, color="white10"),
             sidebar_btn(ft.Icons.LOGOUT, "Logout", "logout"),
         ]),
         width=280, bgcolor="#1e2b5e", padding=20, visible=True,
@@ -813,6 +839,7 @@ def main(page: ft.Page):
                 global APP_PASSWORD
                 if new_pass.value:
                     APP_PASSWORD = new_pass.value
+                    page.client_storage.set("app_pin", new_pass.value)
                     update_app_password(new_pass.value)
                     page.close(reset_dlg)
                     page.snack_bar = ft.SnackBar(ft.Text("PIN Reset Successful!"), bgcolor="green")
