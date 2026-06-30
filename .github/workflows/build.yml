@@ -44,10 +44,6 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Verify Flet
-        shell: powershell
-        run: |
-          python -c "import flet; print('Flet Version:', flet.__version__)"
 
       - name: Clean Previous Build
         shell: powershell
