@@ -16,6 +16,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -23,10 +28,10 @@ jobs:
 
       - name: Build Windows Executable
         run: |
-          flet build windows --verbose
+          flet build windows --product-name "cityglass" --verbose
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TAREKApp
+          name: cityglass-Windows-App
           path: build/windows
