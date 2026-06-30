@@ -28,7 +28,7 @@ jobs:
 
       - name: Build Windows Executable
         run: |
-          flet build windows --product-name "cityglass" --verbose
+          flet build windows --verbose
 
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
